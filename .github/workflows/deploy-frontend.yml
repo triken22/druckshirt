@@ -39,7 +39,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: <REPLACE_WITH_CLOUDFLARE_PAGES_PROJECT_NAME>
+          projectName: druckshirt-frontend
           directory: frontend/dist # Adjust if build output dir is different
           # Use 'main' branch for production, commit hash for staging/preview
           branch: ${{ github.ref_name == 'main' && 'main' || github.sha }}
