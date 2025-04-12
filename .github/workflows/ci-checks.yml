@@ -19,7 +19,8 @@ jobs:
           cache: "npm"
           cache-dependency-path: |
             frontend/package-lock.json
-            workers/**/package-lock.json
+            workers/api-gateway/package-lock.json
+            workers/queue-consumer/package-lock.json
 
       - name: Install All Dependencies
         run: |
