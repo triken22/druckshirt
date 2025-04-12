@@ -1,0 +1,47 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Frontend to Cloudflare Pages
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+        working-directory: ./frontend
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # If using private packages
+
+      # Add build step if necessary (e.g., using Vite)
+      - name: Build Frontend (if needed)
+        run: npm run build # Replace if build command differs
+        working-directory: ./frontend
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: <REPLACE_WITH_CLOUDFLARE_PAGES_PROJECT_NAME>
+          directory: frontend/dist # Adjust if build output dir is different
+          # Use 'main' branch for production, commit hash for staging/preview
+          branch: ${{ github.ref_name == 'main' && 'main' || github.sha }}
+          # Optional: Use github.ref_name for branch alias if Staging is set up via branch alias
+          # branch: ${{ github.ref_name }}

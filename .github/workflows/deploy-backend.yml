@@ -1,0 +1,59 @@
+name: Deploy Backend Workers
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Workers
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            workers/api-gateway/package-lock.json
+            workers/queue-consumer/package-lock.json
+
+      - name: Install Dependencies & Setup Wrangler
+        run: |
+          npm install -g wrangler
+          npm ci --prefix workers/api-gateway
+          npm ci --prefix workers/queue-consumer
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # If using private packages
+
+      - name: Determine Environment
+        id: get_env
+        run: echo "CLOUDFLARE_ENV=${{ github.ref_name == 'main' && 'production' || 'staging' }}" >> $GITHUB_ENV
+
+      - name: Deploy API Gateway Worker
+        run: wrangler deploy --env $CLOUDFLARE_ENV
+        working-directory: ./workers/api-gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pass secrets required by the worker
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          PRINTFUL_API_KEY: ${{ secrets.PRINTFUL_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+
+      - name: Deploy Queue Consumer Worker
+        run: wrangler deploy --env $CLOUDFLARE_ENV
+        working-directory: ./workers/queue-consumer
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Pass secrets required by the worker (often overlaps with gateway)
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          PRINTFUL_API_KEY: ${{ secrets.PRINTFUL_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

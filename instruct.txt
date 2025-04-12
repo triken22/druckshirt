@@ -1,0 +1,313 @@
+Project Goal: Create a streamlined, serverless web application for the German market enabling users to design T-shirts using their own images or AI-generated images (via Grok API), visualize them on mockups, purchase image generation credits, and order the final printed T-shirts.
+
+Target Audience: German-speaking users within Germany, Austria, and Switzerland (DACH region), interested in personalized apparel, unique gifts, or creative expression using cutting-edge AI.
+
+Core Features:
+
+User Accounts: No user accounts will be implemented. Order confirmation and status updates (if possible via Printful webhooks/API without accounts) should be handled via email.
+Image Upload: Intuitive interface for uploading PNG and JPEG files. Consider client-side validation for size/resolution if needed.
+AI Image Generation (Grok API & Token System):
+Token Purchase: Integrate Stripe for users to purchase image generation credits/tokens. Define token bundles and pricing (e.g., 10 tokens for €X, 50 for €Y).
+Token Usage: Users spend tokens to generate images. Clearly display the user's token balance (potentially stored in browser local storage or managed via a lightweight session mechanism).
+API Integration: Integrate with the x.ai Image Generation API (Endpoint: https://api.x.ai/v1/images/generations) using the grok-2-image model. Backend logic (likely Cloudflare Worker) will handle secure API key management and requests.
+Input: Provide a simple text input field for the user's prompt.
+Prompt Revision Handling: Log the revised_prompt returned by the API for debugging/analytics; optionally display it to the user.
+Output Handling: Generate multiple images per request (n > 1, e.g., n=4). Use response_format: "url" to receive image URLs hosted by x.ai for display in the frontend. Provide an interface for the user to select the best result. Generated images are JPG.
+Parameter Limitations: Clearly communicate to the user that parameters like quality, size, or style are not currently supported by the x.ai API.
+T-shirt Mockup & Customization:
+Display uploaded or selected AI-generated JPG images on high-quality T-shirt mockups (front view minimum).
+Allow users to select T-shirt color (syncing available colors with Printful).
+Enable basic image resizing and repositioning on the mockup.
+Shopping Cart & Ordering:
+Simple mechanism to select the designed T-shirt (size, color, quantity) for purchase.
+Standard checkout process collecting necessary shipping information.
+Payment (T-Shirts):
+Integrate Stripe for direct payment processing of T-shirt orders in EUR (handling Credit Cards, potentially Sofort/Giropay).
+Order Fulfillment:
+Backend integration (Cloudflare Worker) with Printful API v2 beta (https://developers.printful.com/docs/v2-beta/) to automatically submit orders upon successful payment.
+Retrieve shipping options and costs from Printful during checkout.
+Technical Specifications:
+
+Platform: Web Application (responsive design for desktop and mobile).
+Frontend: JavaScript, HTML, CSS.
+Backend: Cloudflare Workers (JS/TS) acting as an API gateway and queue consumer, orchestrating calls to external services (x.ai, Printful, Stripe, Resend) and managing minimal state via KV.
+Secrets Management: API keys for x.ai, Stripe, Printful, Resend stored as Worker secrets.
+Endpoints:
+    *   `POST /api/generate-image`:
+        *   **Method:** `POST`
+        *   **Auth:** Requires valid `grant_id` passed in the request body for token validation.
+        *   **Request Body:** `JSON { "prompt": string, "grant_id": string }`
+        *   **Core Logic:** Validates `grant_id` against KV. Checks if `tokens_remaining > 0` in KV. Decrements `tokens_remaining` in KV. Calls x.ai API (`grok-2-image`, `n=4`, `response_format="url"`). Logs `revised_prompt`.
+        *   **Success Response (200 OK):** `JSON { "images": string[] }` (Array of image URLs from x.ai).
+        *   **Error Responses:** `400 Bad Request` (invalid input/`grant_id`), `402 Payment Required` (insufficient tokens), `500 Internal Server Error` (KV error, x.ai API error).
+    *   `POST /api/upload-image`:
+        *   **Method:** `POST`
+        *   **Auth:** None specified (consider rate limiting).
+        *   **Request Body:** `FormData` containing the image file (e.g., field name 'image', accepts PNG/JPEG).
+        *   **Core Logic:** Receives file, validates type/size (optional client-side focus), uploads to Cloudflare R2 with a unique name, constructs public URL.
+        *   **Success Response (200 OK):** `JSON { "imageUrl": string }` (Public URL of the uploaded image in R2).
+        *   **Error Responses:** `400 Bad Request` (file missing, invalid format), `500 Internal Server Error` (R2 upload failure).
+    *   `GET /api/printful/products`:
+        *   **Method:** `GET`
+        *   **Auth:** None (Worker uses Printful API key).
+        *   **Query Parameters:** Optional (e.g., `?category=tshirts`, `?limit=20`) for filtering/pagination.
+        *   **Core Logic:** Calls Printful Catalog API (`GET /v2/catalog/products`) with optional filters. May utilize KV caching for results. Formats response for frontend use.
+        *   **Success Response (200 OK):** `JSON { "products": object[] }` (Array of simplified product details: ID, name, colors, base image URLs, available placements).
+        *   **Error Responses:** `500 Internal Server Error` (Printful API error, KV error).
+    *   `POST /api/printful/shipping-options`:
+        *   **Method:** `POST`
+        *   **Auth:** None (Worker uses Printful API key).
+        *   **Request Body:** `JSON { "recipient": { "address": { "country_code": string, ... } }, "items": [{ "quantity": number, "catalog_variant_id": number }] }` (Structure aligned with Printful's shipping rate estimation endpoint).
+        *   **Core Logic:** Calls the appropriate Printful API endpoint to calculate shipping rates based on destination and items.
+        *   **Success Response (200 OK):** `JSON { "shipping_options": object[] }` (Array of shipping options: ID/name, rate, currency, estimated delivery time).
+        *   **Error Responses:** `400 Bad Request` (invalid address/item structure), `500 Internal Server Error` (Printful API error).
+    *   `POST /api/stripe/create-token-purchase-intent`:
+        *   **Method:** `POST`
+        *   **Auth:** None (Initiates the payment flow).
+        *   **Request Body:** `JSON { "bundle_id": string, "email": string }` (Identifier for token package and buyer's email).
+        *   **Core Logic:** Retrieve or create Stripe `Customer` based on email. Determine price based on `bundle_id`. Generates a cryptographically secure unique `grant_id`. Creates a Stripe PaymentIntent (`POST /v1/payment_intents`) associated with the Customer, amount (EUR), currency, and metadata (`{ "purchase_type": "tokens", "bundle_id": bundle_id, "grant_id": grant_id }`).
+        *   **Success Response (200 OK):** `JSON { "client_secret": string, "grant_id": string }`.
+        *   **Error Responses:** `400 Bad Request` (invalid `bundle_id` or email), `500 Internal Server Error` (Stripe API error).
+    *   `POST /api/stripe/create-tshirt-order-intent`:
+        *   **Method:** `POST`
+        *   **Auth:** None (Initiates the payment flow).
+        *   **Request Body:** `JSON { "order_details": { ..., "shipping_address": { ..., "email": string } } }` (Includes buyer's email in shipping details).
+        *   **Core Logic:** Retrieve or create Stripe `Customer` based on email. Calculates total price. Stores the full `order_details` in KV, keyed by the `payment_intent_id` (obtained after creation) with a TTL (e.g., 24h). Creates a Stripe PaymentIntent associated with the Customer, total amount (EUR), currency, and metadata (`{ "purchase_type": "tshirt" }`).
+        *   **Success Response (200 OK):** `JSON { "client_secret": string }`.
+        *   **Error Responses:** `400 Bad Request` (invalid `order_details`), `500 Internal Server Error` (Pricing error, KV write error, Stripe API error).
+    *   `POST /api/stripe/webhook`:
+        *   **Method:** `POST`
+        *   **Auth:** Stripe Webhook Signature Verification (mandatory).
+        *   **Request Body:** Stripe Event Object (JSON).
+        *   **Core Logic (Webhook Listener):**
+            1.  Verify Stripe signature.
+            2.  Parse event JSON, focusing on `event.type == 'payment_intent.succeeded'`.
+            3.  Retrieve necessary info (PaymentIntent ID, metadata like `purchase_type`, `grant_id`, customer email).
+            4.  **Enqueue a job** onto a Cloudflare Queue (e.g., `token-fulfillment` or `order-fulfillment`) with this information.
+            5.  Implement basic idempotency check if possible before enqueueing (e.g., check KV if event ID processed).
+        *   **Success Response:** `200 OK` with `JSON { "received": true }`. Respond quickly to Stripe.
+        *   **Error Responses:** `400 Bad Request` (invalid signature/payload), `500 Internal Server Error` (Queue enqueue error - critical, needs alerting).
+    *   `GET /api/get-token-balance`:
+        *   **Method:** `GET`
+        *   **Auth:** Requires valid `grant_id` passed as a query parameter.
+        *   **Query Parameters:** `?grant_id=UNIQUE_GRANT_ID` (Required).
+        *   **Core Logic:** Reads token data object from KV using the provided `grant_id`. Extracts `tokens_remaining`.
+        *   **Success Response (200 OK):** `JSON { "tokens_remaining": number }` (Returns 0 if `grant_id` not found or has no tokens).
+        *   **Error Responses:** `400 Bad Request` (missing `grant_id`), `404 Not Found` (invalid `grant_id`), `500 Internal Server Error` (KV read error).
+    *   `POST /api/recover-grant-id`:
+        *   **Method:** `POST`
+        *   **Auth:** None (Relies on email verification). Consider rate limiting.
+        *   **Request Body:** `JSON { "email": string }`
+        *   **Core Logic:** Query Stripe PaymentIntents associated with the provided email for recent, successful 'token' purchases. Identify corresponding `grant_id`(s) from metadata. Trigger Resend to email the found `grant_id`(s) back to the verified user email. Implement checks to prevent abuse.
+        *   **Success Response (200 OK):** `JSON { "message": "If a matching purchase was found, recovery instructions have been sent to your email." }` (Avoid confirming if an email exists).
+        *   **Error Responses:** `400 Bad Request` (invalid email format), `500 Internal Server Error` (Stripe API error, Resend API error).
+*(Internal) /api/email/send*: Helper function/route callable by other parts of the worker to send emails via the chosen provider's API.
+SEO & Marketing:
+
+Keyword Focus: Target primary German keywords based on provided data. Core keywords include:
+tshirt bedrucken    
+t shirt bedrucken lassen    
+tshirt drucken    
+tshirt druck    
+tshirt designs    
+(Also consider secondary/long-tail keywords like "KI T-Shirt Generator", "Grok T-Shirt Design", "personalisiertes T-Shirt", "Fotoshirt gestalten")
+  
+On-Page SEO: Optimize page titles, meta descriptions, headings, image alt text, and content around these target keywords.
+Technical SEO: Ensure clean URLs, mobile-friendliness, fast load times (leveraging Cloudflare), and necessary schema markup.
+UI/UX Considerations:
+
+Clean, modern, and highly intuitive interface, guiding the user seamlessly from design/generation to purchase.
+Clear display of token balance and cost per generation.
+Clear communication about the `grant_id`: Explain its importance for token access, how to keep it safe, and the recovery process.
+Simple checkout process, mindful of the lack of user accounts.
+Manage user expectations regarding AI generation limitations (no size, quality, style controls currently via x.ai) and potential Printful fulfillment times.
+**Accessibility (a11y): Ensure the UI/UX adheres to high accessibility standards, specifically targeting WCAG 2.1 AA level or higher, as generally expected under EU accessibility regulations.**
+Adherence to German privacy regulations (Impressum, Datenschutz).
+
+Okay, I've thought through the components, technologies, data flows, and potential issues. The plan uses Cloudflare Workers, KV, and R2, interacting with Stripe, Printful v2 Beta, and x.ai, with a lightweight frontend on Cloudflare Pages. It avoids user accounts by using a `grant_id` system for tokens (stored client-side, backed by KV, and emailed to the user) and temporary KV storage for T-shirt order details linked to Stripe Payment Intents.
+
+**Key Architectural Decisions:**
+
+1.  **Platform:** Cloudflare serverless stack (Pages, Workers, KV, R2, **Queues**) for performance, scalability, and simplicity.
+2.  **Frontend:** Minimalist (HTML/CSS/Vanilla JS) for performance and ease of deployment via Cloudflare Pages.
+3.  **Backend:** Cloudflare Workers (JS/TS) acting as an API gateway and queue consumer, orchestrating calls to external services (x.ai, Printful, Stripe, Resend) and managing minimal state via KV.
+4.  **State Management (No Accounts):**
+    *   Tokens: Unique `grant_id` generated per purchase, stored in `localStorage`, validated/decremented via KV by the worker. **Crucially, this ID is emailed to the user as the primary backup.** A recovery mechanism (`/api/recover-grant-id`) allows users to request their ID via email if lost.
+    *   T-Shirt Orders: Stateless design process using `localStorage`. During checkout, order details are temporarily stored in KV keyed by the Stripe PaymentIntent ID until fulfillment processing via Queue is complete.
+5.  **Image Handling:**
+    *   User Uploads: Uploaded directly to R2 via a worker endpoint to get a stable URL.
+    *   AI Generated: Use x.ai provided URLs directly (assuming stability). Fallback: Worker downloads from x.ai and uploads to R2.
+    *   Mockups: Client-side rendering using base product images (fetched from Printful via worker) and overlaying the design URL (R2 or x.ai).
+6.  **Payment:** Stripe Integration via Payment Intents (associated with Stripe Customer objects) and secure client-side handling with Stripe.js/Elements. Webhooks trigger backend fulfillment logic via Queues.
+7.  **Fulfillment:** Backend webhook listener verifies Stripe event and enqueues a job. A separate **Queue Consumer Worker** retrieves order details from KV and submits the order to Printful v2 Beta API, handling retries and failures.
+8.  **Notifications:** Use Resend for transactional emails. The Cloudflare Worker (webhook listener or queue consumer) will make `fetch` requests to the Resend API (`https://api.resend.com/emails`) to send the token `grant_id` (including recovery info) and T-shirt order confirmations/failure notices.
+
+This plan balances the requirements for simplicity, performance, and the specified features within a serverless context, addressing the unique challenge of managing state (tokens, orders) without traditional user accounts. **Key dependencies and risks include the stability of external APIs (Printful v2 Beta, x.ai URL persistence - requiring monitoring and potential fallbacks) and the user experience around the `grant_id` system.**
+
+**API Requirements & Documentation:**
+
+1.  **x.ai Image Generation API:**
+    *   **Endpoint:** `https://api.x.ai/v1/images/generations`
+    *   **Model:** `grok-2-image`
+    *   **Authentication:** API Key (handled server-side by Worker).
+    *   **Key Parameters:** `prompt` (string), `n` (integer, e.g., 4), `response_format="url"`.
+    *   **Response Handling:** Must capture image URLs and optionally the `revised_prompt`.
+    *   **Documentation:** (Specific documentation URL not provided in source material, use endpoint as reference).
+
+2.  **Stripe API:**
+    *   **Authentication:** Secret Key (server-side), Publishable Key (client-side).
+    *   **Core Functionality:**
+        *   Payment Intents: Create intents (`POST /v1/payment_intents`) with amount, currency (EUR), and metadata (`grant_id`, `purchase_type`, temporary order details link). Handle `client_secret` on the frontend.
+        *   Webhooks: Securely receive and verify events (`payment_intent.succeeded`) via a dedicated endpoint. Use event data and metadata for fulfillment logic.
+        *   Client-Side: Stripe.js / Elements for secure payment input.
+    *   **Documentation:**
+        *   General API Ref: `https://stripe.com/docs/api`
+        *   Payment Intents: `https://stripe.com/docs/api/payment_intents`
+        *   Webhooks: `https://stripe.com/docs/webhooks`
+        *   Stripe.js/Elements: `https://stripe.com/docs/stripe-js`
+
+3.  **Printful API (v2 Beta):**
+    *   **Authentication:** Bearer Token (Private Token).
+    *   **Base URL:** `https://api.printful.com/v2/`
+    *   **Core Functionality:**
+        *   Catalog: Retrieve product details, variants, colors, placements (`GET /catalog/products`). Filter by type (e.g., T-shirts).
+        *   Shipping Rates: Estimate shipping costs (Requires confirming the specific v2 endpoint, potentially `POST /orders/estimate-costs` or similar).
+        *   Order Creation:
+            1.  Create Draft Order (`POST /orders`): Provide recipient details.
+            2.  Add Order Items (`POST /orders/{order_id}/order-items`): Specify `source="catalog"`, `catalog_variant_id`, `quantity`, and design details (`placements` array with image `url` from R2/x.ai).
+            3.  Confirm Order (`POST /orders/{order_id}/confirm`): Finalize the order for fulfillment.
+    *   **Documentation:**
+        *   General v2 Beta: `https://developers.printful.com/docs/v2-beta/`
+        *   Orders API (covers creation, items, confirmation): `https://developers.printful.com/docs/v2-beta/orders-api/`
+        *   Catalog API: `https://developers.printful.com/docs/v2-beta/catalog-api/`
+
+4.  **Resend API (for Transactional Emails):**
+    *   **Endpoint:** `https://api.resend.com/emails`
+    *   **Authentication:** `Authorization: Bearer YOUR_RESEND_API_KEY` (API Key stored as Cloudflare Worker secret).
+    *   **Core Functionality:** From the Worker, use `fetch` to make a `POST` request to the endpoint with the appropriate headers and a JSON body specifying `from`, `to`, `subject`, and `html` content.
+    *   **Documentation:**
+        *   Cloudflare Workers Integration: `https://resend.com/docs/send-with-cloudflare-workers`
+        *   General Send Email API: `https://resend.com/docs/api-reference/send-email`
+
+**Queue Consumer Worker Logic:**
+    *   **Trigger:** Triggered by messages arriving on Cloudflare Queues (`token-fulfillment`, `order-fulfillment`).
+    *   **Core Logic (`token-fulfillment`):** Processes job data (grant_id, bundle_id, email). Updates/creates token balance in KV. Sends confirmation email via Resend (including `grant_id` and explaining its importance/recovery). Handles KV errors, retries.
+    *   **Core Logic (`order-fulfillment`):** Processes job data (PaymentIntent ID, email, etc.). Retrieves full order details from KV using PaymentIntent ID. Submits order to Printful API (Create -> Add Items -> Confirm). Sends confirmation email via Resend. Deletes order details from KV upon success. Handles KV errors, Printful API errors (with retries). If final failure, logs detailed error, potentially moves to dead-letter queue, and sends failure notification email to user/admin.
+    *   **Error Handling:** Implement robust error handling and retry logic within the consumer as provided by Cloudflare Queues. Use dead-letter queues for persistent failures requiring manual intervention/refunds.
+
+**Security Considerations:**
+    *   **Input Validation:** Implement rigorous server-side validation and sanitization on ALL inputs (prompts, file metadata, addresses, form fields) to prevent XSS, injection, and other attacks.
+    *   **Rate Limiting:** Configure Cloudflare Rate Limiting on sensitive endpoints: `/api/generate-image`, `/api/recover-grant-id`, payment intent creation endpoints (`/api/stripe/...`), and potentially `/api/upload-image`.
+    *   **R2 Access:** Ensure R2 bucket for uploads has appropriate access controls (e.g., public read access for objects if needed by Printful, but no public list access).
+    *   **Secrets:** Manage all API keys and secrets securely via Cloudflare Worker secrets.
+
+**Monitoring & Logging:**
+    *   **Strategy:** Implement structured logging throughout the Workers (API Gateway and Queue Consumer).
+    *   **Integration:** Integrate with a third-party logging/monitoring service (e.g., Sentry, Logtail, Axiom) for error aggregation, alerting (especially on queue failures, critical API errors), and performance monitoring.
+    *   **Key Metrics:** Monitor API endpoint latency/errors, queue depths/failures, external API call success rates.
+
+**Analytics & Tracking Strategy (PostHog):**
+
+*   **Goal:** Implement comprehensive product analytics using PostHog (either self-hosted or cloud) to understand user behavior, track key conversion funnels, identify drop-off points, measure feature adoption, and inform product decisions.
+*   **Core Integration:**
+    *   **Frontend:** Integrate `posthog-js` library into the main JavaScript entry point. Initialize with the appropriate PostHog Project API Key and Host URL (managed via environment variables/build secrets).
+    *   **Backend (Optional but Recommended):** Consider using `posthog-node` (if using Node.js runtime) or direct API calls from the Worker (API Gateway or Queue Consumer) for events triggered purely server-side (e.g., successful fulfillment, recovery requests). Ensure events are associated with the user's `distinct_id` if passed from the frontend, or use relevant identifiers like `grant_id` or `stripe_customer_id` in properties.
+*   **User Identification:**
+    *   Leverage PostHog's automatic anonymous `distinct_id` management for tracking unique users/sessions.
+    *   Acknowledge limitation: Without user accounts, identity persistence across devices/cleared storage is not guaranteed by default.
+    *   Where relevant (and GDPR compliant), include identifiers like `grant_id` or the Stripe `customer_id` as properties in specific events (e.g., purchases, recovery) to allow for backend analysis linking different sessions of the same conceptual user.
+*   **Event Tracking Requirements:**
+    *   **Automatic Capture:** Enable autocapture for pageviews and basic interactions (clicks, input changes) via `posthog-js`.
+    *   **Custom Frontend Events:**
+        *   `image_uploaded` (properties: `file_type`, `file_size`)
+        *   `ai_prompt_submitted`
+        *   `ai_image_generated` (properties: `prompt_used`, `revised_prompt`, `num_images_returned`)
+        *   `ai_image_selected`
+        *   `tshirt_color_selected` (properties: `product_id`, `color`)
+        *   `tshirt_size_selected` (properties: `product_id`, `size`)
+        *   `image_manipulated` (e.g., resized, repositioned)
+        *   `design_finalized` (properties: `product_id`, `color`, `size`, `quantity`)
+        *   `token_purchase_initiated` (properties: `bundle_id`)
+        *   `checkout_started`
+        *   `shipping_option_selected` (properties: `service_name`, `rate`)
+        *   `payment_initiated` (properties: `purchase_type` ["tokens" or "tshirt"])
+        *   `grant_id_recovery_requested` (properties: `email_used` - potentially hash email)
+    *   **Custom Backend Events (Server-Side Tracking):**
+        *   `token_purchase_completed` (properties: `bundle_id`, `grant_id`, `stripe_customer_id`, `amount_eur`)
+        *   `tshirt_order_completed` (properties: `printful_order_id`, `stripe_customer_id`, `total_amount_eur`, `shipping_country`)
+        *   `grant_id_recovered` (properties: `email_used` - potentially hash email)
+        *   `printful_order_failed` (properties: `payment_intent_id`, `error_details`)
+        *   `token_balance_checked` (properties: `grant_id`)
+*   **PostHog Features:**
+    *   **Session Replay:** Enable session recording on the frontend to visualize user journeys and debug issues. Ensure appropriate PII masking rules are configured for GDPR compliance.
+    *   **Funnels:** Define and monitor key conversion funnels within PostHog:
+        *   Token Purchase: `View Shop -> token_purchase_initiated -> payment_initiated (tokens) -> token_purchase_completed`
+        *   AI Design: `ai_prompt_submitted -> ai_image_generated -> ai_image_selected`
+        *   T-Shirt Order: `design_finalized -> checkout_started -> shipping_option_selected -> payment_initiated (tshirt) -> tshirt_order_completed`
+    *   **Feature Flags / A/B Testing:** Note as a potential future use case enabled by PostHog integration.
+*   **GDPR & Compliance:**
+    *   Usage must be fully GDPR compliant.
+    *   Update the Privacy Policy (`Datenschutz`) to clearly state the use of PostHog, data collected (events, session replay properties, anonymous IDs), purpose, retention policies, and user rights including opt-out.
+    *   Implement an explicit user opt-out mechanism using `posthog.opt_out_capturing()`. This should ideally be integrated with a cookie/consent banner mechanism appropriate for the German market.
+*   **Documentation Reference:** `https://posthog.com/docs`
+
+**Legal:**
+    *   **GDPR Compliance: Adherence to the General Data Protection Regulation (GDPR) is a paramount requirement.** All data processing activities must be compliant.
+    *   **Impressum & Datenschutz:** Ensure pages are present and contain legally compliant content reviewed for the German market (GDPR, TMG). This includes identifying the data controller, detailing data processing activities (user inputs, KV, R2, Stripe, Printful, x.ai, Resend, Cloudflare logs), data retention periods, cookie usage (if any), and user rights.
+    *   **Terms of Service:** Include clear terms regarding AI generation limitations, token usage, payment, fulfillment, returns/refunds (aligned with Printful's policies where applicable).
+
+**Implementation Guidelines:**
+
+*   **Code Documentation:** All code (frontend and backend) must be **excessively documented**. Include detailed comments explaining the purpose of functions, complex logic, data structures, and integration points. Provide context to aid maintainability and future development.
+
+# CI/CD Pipeline Requirements (Simplified)
+
+## 1. Goals
+Automate build, testing, and deployment for frontend (Pages) and backend (Workers) using GitHub Actions to ensure quality and enable rapid, reliable delivery, balancing simplicity with robustness.
+
+## 2. Triggers
+*   **Pull Requests (to `main`/`develop`):** Run static checks, unit tests.
+*   **Push to `develop`:** Run static checks, unit tests, E2E tests (against Staging), deploy to Staging.
+*   **Push to `main`:** Run static checks, unit tests, deploy to Production.
+
+## 3. Environments
+*   **Production (`main` branch):** Live environment. Uses live keys/resources. Deployed on push to `main`.
+*   **Staging (`develop` branch):** Pre-production testing. Uses test keys/isolated resources. Deployed on push to `develop`.
+*   **(Optional) Preview Environments:** For PRs, using test keys/resources.
+
+## 4. Core Testing Strategy (Mandatory Checks)
+*   **Static Analysis (PRs, pushes):**
+    *   Linting (e.g., ESLint) - Fail build on errors.
+    *   Formatting (e.g., Prettier) - Fail build on errors.
+    *   Type Checking (TypeScript) - Fail build on errors.
+*   **Unit Tests (PRs, pushes):**
+    *   Frontend & Backend: Test critical functions/logic/handlers. Mock dependencies (external APIs, Cloudflare resources). High coverage required. Framework: Vitest/Jest. - Fail build on failure.
+*   **End-to-End (E2E) Tests (Push to `develop` against Staging):**
+    *   Framework: Playwright/Cypress.
+    *   Scope: Focus on essential user flows:
+        *   Successful Token Purchase & Check Balance.
+        *   Successful T-Shirt Order (Design -> Mock Payment -> Check Confirmation).
+    *   Requirement: Must pass before `develop` can be merged to `main`. - Fail build on failure.
+*   **Accessibility Checks (E2E Tests - Informational):**
+    *   Tooling: Axe-core integrated into E2E.
+    *   Requirement: Report violations as feedback; rely on manual review for strict compliance. Does *not* fail the build automatically.
+
+## 5. Deployment Process (GitHub Actions)
+*   **Workflows:** Separate workflows for frontend (Pages) and backend (Workers) in `.github/workflows/`.
+*   **Secrets:** Manage Cloudflare tokens, API keys (Stripe, Printful, Resend, x.ai per environment) via GitHub Secrets.
+*   **Frontend (Pages):** Use `cloudflare/pages-action`. Trigger on push to `main`/`develop`.
+*   **Backend (Workers):** Use Wrangler CLI (`wrangler deploy --env <staging|production>`). Trigger on push to `main`/`develop`. Pass secrets via Worker secrets.
+
+## 6. Security Checks (Mandatory)
+*   **SAST:** GitHub Code Scanning (CodeQL) on PRs/pushes.
+*   **Dependencies:** Dependabot alerts enabled.
+*   **Secrets:** Secret scanning enabled.
+
+## 7. Documentation Checks
+*   **Requirement:** Code must be "excessively documented" (manual enforcement).
+*   **Automation:** Basic, non-blocking comment presence check in PR workflow for feedback only.
+*   **Enforcement:** Mandatory PR review for documentation quality.
+
+## 8. Post-Deployment
+*   **Monitoring:** Rely on existing monitoring strategy (metrics, logging, alerting) to verify deployment health. Manual rollback if issues detected.
+*   **(Optional) Smoke Tests:** Minimal automated checks post-deployment. 
