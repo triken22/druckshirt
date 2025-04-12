@@ -48,9 +48,9 @@ let currentClientSecret = null;
 let currentGrantId = null;
 
 // --- State Variables ---
-let availableProducts = [];
-let selectedProduct = null;
-let selectedVariant = null;
+let availableProducts = []; // Will now store more details, including placements
+let selectedProduct = null; // Will store the full product object
+let selectedVariant = null; // Includes color, size, and variant ID
 let selectedImageUrl = null; // URL of the image chosen for design
 
 // --- DOM Elements (Add Phase 3) ---
@@ -653,26 +653,33 @@ async function fetchAndDisplayProducts() {
   if (!productListDiv) return;
   productListDiv.innerHTML = "<p>Lade T-Shirt Produkte...</p>";
   try {
-    const response = await fetch(`${API_BASE_URL}/printful/products`); // Add query params if needed
+    // Assume the backend endpoint returns products including placement details now
+    const response = await fetch(`${API_BASE_URL}/printful/products`);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const data = await response.json();
-    availableProducts = data.products || []; // Store fetched products
+    // Store the full product data, expecting it to include placements array
+    availableProducts = data.products || [];
 
     if (availableProducts.length === 0) {
       productListDiv.innerHTML = "<p>Keine Produkte gefunden.</p>";
       return;
     }
 
-    // Render product list
-    productListDiv.innerHTML = ""; // Clear loading message
+    productListDiv.innerHTML = "";
     availableProducts.forEach((product) => {
-      const item = document.createElement("div");
-      item.classList.add("product-item");
-      item.textContent = product.name; // Display product name
-      item.dataset.productId = product.id; // Store ID for selection
-      productListDiv.appendChild(item);
+      // Verify product has necessary data (like placements) before adding
+      if (product.name && product.id /* && product.placements */) {
+        // Add check for placements once backend provides it
+        const item = document.createElement("div");
+        item.classList.add("product-item");
+        item.textContent = product.name;
+        item.dataset.productId = product.id;
+        productListDiv.appendChild(item);
+      } else {
+        console.warn("Skipping product due to missing data:", product);
+      }
     });
   } catch (error) {
     console.error("Error fetching products:", error);
@@ -837,85 +844,105 @@ function showSection(sectionId) {
 }
 
 function getPlacementData() {
-  // --- VERY IMPORTANT ---
-  // This function converts visual mockup interaction (pixels)
-  // into the INCH-based format required by the Printful API V2.
-  // It relies on several assumptions and placeholders that MUST be verified
-  // and potentially replaced with data fetched from the Printful Catalog API.
-  //
-  // ASSUMPTIONS:
-  // 1. Target DPI: Assumes Printful uses 150 DPI for print file calculations.
-  //    This MIGHT be incorrect. Check Printful guidelines.
-  // 2. Placement: Assumes the placement identifier is exactly "front".
-  //    This needs to be fetched from the product details if supporting other placements.
-  // 3. area_width / area_height: USES PLACEHOLDER VALUES (10 inches).
-  //    These dimensions of the *actual print area* in inches MUST be fetched
-  //    from the Printful Catalog API for the specific product variant and placement.
-  //    Using incorrect values will lead to incorrect positioning/sizing.
-  // -----------------
+  // --- Phase 4.1 Implementation using fetched data ---
 
   if (
     !designImageContainer ||
     !designImageContainer.parentElement ||
-    !selectedImageUrl
+    !selectedImageUrl ||
+    !selectedProduct
   ) {
-    console.error("Missing elements or image URL for placement data.");
+    console.error(
+      "Missing elements, image URL, or selected product for placement data."
+    );
     return null;
   }
 
-  const DPI = 150; // Assumed DPI - VERIFY THIS!
-  const PLACEHOLDER_AREA_WIDTH_INCHES = 12; // !! MUST BE REPLACED with actual print area width !!
-  const PLACEHOLDER_AREA_HEIGHT_INCHES = 16; // !! MUST BE REPLACED with actual print area height !!
-  const PLACEMENT_IDENTIFIER = "front"; // !! MUST BE REPLACED/CONFIRMED from product data !!
+  // --- ASSUMPTION 1: Printful Template DPI ---
+  // Still required to convert pixel dimensions from Catalog API to inches for Order API.
+  // VERIFY THIS VALUE (300 is common for print).
+  const ASSUMED_PRINTFUL_TEMPLATE_DPI = 300;
 
+  // --- ASSUMPTION 2: Visual Mockup DPI Conversion ---
+  // Still required to convert visual pixel interaction to design inches.
+  // Adjust VISUAL_TO_INCH_DPI based on your mockup's perceived resolution/scaling.
+  const VISUAL_TO_INCH_DPI = 150;
+
+  // --- Get Placement Data from Selected Product ---
+  const PLACEMENT_IDENTIFIER = "front"; // Assuming "front" placement for now
+  const productPlacement = selectedProduct.placements?.find(
+    (p) => p.placement === PLACEMENT_IDENTIFIER
+  );
+
+  if (
+    !productPlacement ||
+    !productPlacement.print_area_width_px ||
+    !productPlacement.print_area_height_px
+  ) {
+    console.error(
+      `Required placement data (incl. print_area dimensions) for '${PLACEMENT_IDENTIFIER}' not found in selected product object:`,
+      selectedProduct
+    );
+    displayMessage(
+      document.getElementById("design-status"),
+      "FEHLER: Druckbereich-Daten für Produkt fehlen!",
+      "error"
+    );
+    return null; // Cannot proceed without print area dimensions
+  }
+
+  // --- CALCULATIONS ---
+
+  // 1. Print Area Dimensions in Inches (Required for Order API)
+  const area_width_inches =
+    productPlacement.print_area_width_px / ASSUMED_PRINTFUL_TEMPLATE_DPI;
+  const area_height_inches =
+    productPlacement.print_area_height_px / ASSUMED_PRINTFUL_TEMPLATE_DPI;
+
+  // 2. Design Dimensions & Position in Pixels (from visual mockup interaction)
   const containerRect = designImageContainer.getBoundingClientRect();
-  const mockupRect = designImageContainer.parentElement.getBoundingClientRect(); // The visual mockup div
-
+  const mockupRect = designImageContainer.parentElement.getBoundingClientRect();
   if (mockupRect.width === 0 || mockupRect.height === 0) {
     console.error("Mockup area has zero dimensions visually.");
     return null;
   }
-
-  // Calculate dimensions and position in PIXELS relative to the mockup div
   const pixelWidth = containerRect.width;
   const pixelHeight = containerRect.height;
-  const pixelLeft = containerRect.left - mockupRect.left;
-  const pixelTop = containerRect.top - mockupRect.top;
+  const pixelLeft = Math.max(0, containerRect.left - mockupRect.left);
+  const pixelTop = Math.max(0, containerRect.top - mockupRect.top);
 
-  // Convert pixel values to INCHES based on assumed DPI
-  const widthInches = pixelWidth / DPI;
-  const heightInches = pixelHeight / DPI;
-  const leftInches = pixelLeft / DPI;
-  const topInches = pixelTop / DPI;
+  // 3. Convert Design Pixels to Inches (for Order API)
+  const design_width_inches = pixelWidth / VISUAL_TO_INCH_DPI;
+  const design_height_inches = pixelHeight / VISUAL_TO_INCH_DPI;
+  const design_left_inches = pixelLeft / VISUAL_TO_INCH_DPI;
+  const design_top_inches = pixelTop / VISUAL_TO_INCH_DPI;
 
-  // --- Structure based on Printful Docs ---
+  // --- CONSTRUCT API PAYLOAD ---
   const placementData = {
     placement: PLACEMENT_IDENTIFIER,
-    // technique: "dtg", // Optional, depends on product/placement
     layers: [
       {
         type: "file",
-        url: selectedImageUrl, // The URL of the uploaded/generated image
-        // layer_options: [], // Optional e.g., for embroidery
+        url: selectedImageUrl,
         position: {
-          // Dimensions of the print area (REQUIRED, use placeholders for now)
-          area_width: PLACEHOLDER_AREA_WIDTH_INCHES, // MUST REPLACE!
-          area_height: PLACEHOLDER_AREA_HEIGHT_INCHES, // MUST REPLACE!
+          // Print area dimensions in INCHES
+          area_width: parseFloat(area_width_inches.toFixed(4)),
+          area_height: parseFloat(area_height_inches.toFixed(4)),
 
-          // Dimensions of the design file itself in inches
-          width: parseFloat(widthInches.toFixed(4)),
-          height: parseFloat(heightInches.toFixed(4)),
+          // Design dimensions in INCHES
+          width: parseFloat(design_width_inches.toFixed(4)),
+          height: parseFloat(design_height_inches.toFixed(4)),
 
-          // Offset of the design file from the top-left (0,0) of the print area in inches
-          top: parseFloat(topInches.toFixed(4)),
-          left: parseFloat(leftInches.toFixed(4)),
+          // Design offset in INCHES from top-left of print area
+          top: parseFloat(design_top_inches.toFixed(4)),
+          left: parseFloat(design_left_inches.toFixed(4)),
         },
       },
     ],
   };
 
   console.log(
-    "Generated Placement Data (NEEDS VALIDATION):",
+    "Generated Placement Data (Verify DPI assumptions!):",
     JSON.stringify(placementData, null, 2)
   );
   return placementData;

@@ -5,7 +5,6 @@ import { cors } from "hono/cors";
 import Stripe from "stripe";
 import { z } from "zod";
 import { Resend } from "resend";
-// import * as Sentry from "@sentry/cloudflare"; // Commented out Sentry import
 import type { ExecutionContext as HonoExecutionContext } from "hono";
 
 /**
@@ -84,7 +83,8 @@ export interface Env {
    */
   R2_PUBLIC_URL_PREFIX: string;
 
-  // SENTRY_DSN?: string; // Commented out Sentry DSN
+  // Sentry DSN
+  SENTRY_DSN?: string;
 
   /**
    * PostHog Project API Key for sending backend events.
@@ -130,6 +130,7 @@ interface TokenData {
 // --- Constants ---
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB limit
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png"];
+const PRINTFUL_PRODUCTS_CACHE_TTL = 3600; // Cache Printful products for 1 hour (in seconds)
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -519,66 +520,54 @@ app.post("/api/generate-image", async (c) => {
   }
 });
 
-// Placeholder for image generation
-app.post("/api/generate-image", async (c) => {
-  // TODO: Phase 2 - Implement x.ai image generation
-  console.warn("/api/generate-image not fully implemented");
-  return c.json(
-    {
-      images: [
-        "https://placekitten.com/g/512/512",
-        "https://placekitten.com/g/513/513",
-      ],
-    },
-    200
-  ); // Placeholder
-});
+// Interfaces from Printful API Response (add/modify to include placements)
+interface PrintfulPlacement {
+  placement: string; // e.g., "front", "back"
+  print_area_width: number; // In PIXELS
+  print_area_height: number; // In PIXELS
+  // Potentially other fields like supported techniques, options etc.
+}
 
-// Placeholder for image upload
-app.post("/api/upload-image", async (c) => {
-  // TODO: Phase 2/3 - Implement robust R2 upload
-  console.warn("/api/upload-image not fully implemented");
-  return c.json({ imageUrl: "https://placekitten.com/g/300/300" }, 200); // Placeholder
-});
-
-// --- Printful API Types (Basic Examples - Refine based on actual API response) ---
 interface PrintfulVariant {
   id: number;
-  name: string; // e.g., "White / S"
-  size: string; // e.g., "S"
-  color: string; // e.g., "White"
-  color_code: string; // e.g., "#FFFFFF"
+  name: string;
+  size: string;
+  color: string;
+  color_code: string;
   image: string; // URL to variant image
-  price: number; // Price in major currency unit (e.g., EUR)
+  price: number;
   in_stock: boolean;
-  // ... other variant fields
 }
 
 interface PrintfulProduct {
-  id: number; // Printful Product ID
-  title: string; // e.g., "Unisex Basic Softstyle T-Shirt | Gildan 64000"
+  id: number;
+  title: string;
   description: string;
   brand: string | null;
   model: string | null;
-  image: string; // URL to main product image
+  image: string;
   variants: PrintfulVariant[];
-  // TODO: Add placement details if needed
-  // print_areas: any[];
-  // ... other product fields
+  placements?: PrintfulPlacement[]; // Make optional in case some products lack it
 }
 
 // --- Formatted Product Types (for Frontend) ---
+interface FormattedPlacement {
+  placement: string;
+  print_area_width_px: number; // Store original pixels
+  print_area_height_px: number; // Store original pixels
+}
+
 interface FormattedVariant {
-  id: number; // Printful Catalog Variant ID
+  id: number;
   size: string;
   color: string;
   color_code: string;
   in_stock: boolean;
-  // price: number; // Consider adding price if needed
+  image_url?: string; // Add variant specific image URL
 }
 
 interface FormattedProduct {
-  id: number; // Printful Product ID
+  id: number;
   name: string;
   description: string;
   brand: string | null;
@@ -587,22 +576,70 @@ interface FormattedProduct {
   available_sizes: string[];
   available_colors: { name: string; code: string }[];
   variants: FormattedVariant[];
-  // TODO: Add formatted placement info
+  placements: FormattedPlacement[]; // Add placements array
 }
 
 // GET /api/printful/products
 app.get("/api/printful/products", async (c) => {
-  if (!c.env.PRINTFUL_API_KEY) {
-    console.error("PRINTFUL_API_KEY not set.");
+  if (!c.env.PRINTFUL_API_KEY || !c.env.STATE_KV) {
+    console.error("PRINTFUL_API_KEY or STATE_KV binding missing.");
     return c.json({ error: "Server configuration error" }, 500);
   }
 
+  let cacheHit = false;
   try {
-    // TODO: Add query param handling from c.req.query()
+    // --- Query Parameter Handling ---
+    const limitQuery = c.req.query("limit");
+    const offsetQuery = c.req.query("offset");
+    const categoryIdQuery = c.req.query("category_id"); // Example: Allow category filtering
+
+    // Validate and parse parameters (add more robust validation as needed)
+    const limit = limitQuery ? parseInt(limitQuery, 10) : 20; // Default limit
+    const offset = offsetQuery ? parseInt(offsetQuery, 10) : 0;
+    const categoryId = categoryIdQuery ? categoryIdQuery : null;
+
+    if (isNaN(limit) || limit <= 0 || limit > 100) {
+      // Printful max limit is 100
+      return c.json(
+        { error: "Invalid limit parameter. Must be between 1 and 100." },
+        400
+      );
+    }
+    if (isNaN(offset) || offset < 0) {
+      return c.json(
+        { error: "Invalid offset parameter. Must be 0 or greater." },
+        400
+      );
+    }
+
+    // --- KV Caching Logic ---
+    // Construct cache key based on parameters that affect the result
+    const cacheKey = `printful:products:l=${limit}:o=${offset}${categoryId ? `:c=${categoryId}` : ""}`;
+
+    // Try fetching from cache first
+    const cachedData = await c.env.STATE_KV.get<FormattedProduct[]>(cacheKey, {
+      type: "json",
+    });
+    if (cachedData) {
+      console.log(`Cache hit for Printful products: ${cacheKey}`);
+      cacheHit = true;
+      c.header("X-Cache", "hit");
+      return c.json({ products: cachedData });
+    }
+
+    console.log(
+      `Cache miss for Printful products: ${cacheKey}. Fetching from API.`
+    );
+    c.header("X-Cache", "miss");
+
+    // --- Fetch from Printful API ---
     const queryParams = new URLSearchParams();
-    // Example: Filter only T-SHIRTS category if Printful supports it
-    // queryParams.set('category_id', '<PRINTFUL_TSHIRT_CATEGORY_ID>');
-    // queryParams.set('limit', '20');
+    queryParams.set("limit", limit.toString());
+    queryParams.set("offset", offset.toString());
+    if (categoryId) {
+      queryParams.set("category_id", categoryId); // Pass category ID if provided
+    }
+    // TODO: Potentially filter specific product IDs if needed via queryParams.set('product_ids', '...')
 
     const response = await printfulRequestGateway(
       c.env.PRINTFUL_API_KEY,
@@ -622,12 +659,10 @@ app.get("/api/printful/products", async (c) => {
         500
       );
     }
-
     const result = (await response.json()) as {
       code: number;
       data: PrintfulProduct[];
-    }; // Basic typing for the response structure
-
+    };
     if (result.code !== 200 || !Array.isArray(result.data)) {
       console.error("Unexpected Printful API response format:", result);
       return c.json(
@@ -636,7 +671,7 @@ app.get("/api/printful/products", async (c) => {
       );
     }
 
-    // Format the products for the frontend
+    // --- Format Response ---
     const formattedProducts: FormattedProduct[] = result.data.map(
       (product: PrintfulProduct) => {
         const availableSizes = [
@@ -660,7 +695,17 @@ app.get("/api/printful/products", async (c) => {
           color: v.color,
           color_code: v.color_code,
           in_stock: v.in_stock,
+          image_url: v.image, // Pass variant image URL
         }));
+
+        // Format placements data
+        const placements: FormattedPlacement[] = (product.placements || []).map(
+          (p) => ({
+            placement: p.placement,
+            print_area_width_px: p.print_area_width,
+            print_area_height_px: p.print_area_height,
+          })
+        );
 
         return {
           id: product.id,
@@ -668,17 +713,36 @@ app.get("/api/printful/products", async (c) => {
           description: product.description,
           brand: product.brand,
           model: product.model,
-          default_image_url: product.image, // Use main product image as default
+          default_image_url: product.image,
           available_sizes: availableSizes,
           available_colors: availableColors,
           variants: variants,
+          placements: placements, // Include formatted placements
         };
       }
+    );
+
+    // --- Store in Cache ---
+    // Use waitUntil to avoid blocking the response
+    c.executionCtx.waitUntil(
+      c.env.STATE_KV.put(cacheKey, JSON.stringify(formattedProducts), {
+        expirationTtl: PRINTFUL_PRODUCTS_CACHE_TTL,
+      })
+        .then(() =>
+          console.log(`Stored Printful products in cache: ${cacheKey}`)
+        )
+        .catch((err) =>
+          console.error(
+            `Failed to cache Printful products for key ${cacheKey}:`,
+            err
+          )
+        )
     );
 
     return c.json({ products: formattedProducts });
   } catch (error: any) {
     console.error("Error fetching Printful products:", error);
+    // Avoid caching errors
     return c.json({ error: "Internal server error" }, 500);
   }
 });
