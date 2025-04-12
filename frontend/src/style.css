@@ -139,3 +139,153 @@ footer {
     width: 90%;
   }
 }
+
+/* --- Phase 2 Styles --- */
+
+/* Tabs for Image Source */
+.tabs {
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #ccc;
+}
+
+.tab-button {
+  background: #eee;
+  color: #333;
+  border: 1px solid #ccc;
+  border-bottom: none;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  border-radius: 5px 5px 0 0;
+  margin-bottom: -1px; /* Overlap border */
+  transition: background-color 0.3s ease;
+}
+
+.tab-button.active {
+  background: #fff;
+  border-bottom: 1px solid #fff;
+  font-weight: bold;
+}
+
+.tab-content {
+  display: none;
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-top: none;
+  border-radius: 0 0 5px 5px;
+  margin-bottom: 1.5rem;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+#image-preview-upload img,
+#image-preview-ai img {
+  max-width: 150px;
+  max-height: 150px;
+  margin-top: 1rem;
+  border: 1px solid #eee;
+  display: block;
+}
+
+/* AI Generation Grid */
+#ai-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+#ai-results-grid img {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.3s ease;
+}
+
+#ai-results-grid img:hover,
+#ai-results-grid img.selected {
+  border-color: #333;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Design Section Layout */
+.design-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* Adjust ratio as needed */
+  gap: 2rem;
+}
+
+.design-controls {
+  /* Styles for the left control panel */
+}
+
+.mockup-area-container {
+  /* Styles for the right mockup area */
+  text-align: center;
+}
+
+/* Product List */
+#product-list {
+  max-height: 200px; /* Example height */
+  overflow-y: auto;
+  border: 1px solid #eee;
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.product-item {
+  padding: 0.5rem;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  transition: background-color 0.3s ease;
+}
+
+.product-item:last-child {
+  border-bottom: none;
+}
+
+.product-item:hover,
+.product-item.selected {
+  background-color: #f0f0f0;
+}
+
+/* Color Swatches */
+#color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.color-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #ccc;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.color-swatch.selected {
+  border-color: #333;
+  transform: scale(1.1);
+}
+
+/* Adjust Design Layout for smaller screens */
+@media (max-width: 768px) {
+  .design-layout {
+    grid-template-columns: 1fr; /* Stack controls and mockup */
+  }
+  .mockup-area-container {
+    margin-top: 2rem;
+  }
+  /* Existing media queries... */
+}

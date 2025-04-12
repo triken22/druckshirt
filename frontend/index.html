@@ -18,20 +18,117 @@
     </header>
 
     <main>
-      <section id="image-upload-section">
-        <h2>1. Bild Hochladen</h2>
-        <input type="file" id="image-upload-input" accept=".png, .jpg, .jpeg" />
-        <button id="image-upload-button">Bild Hochladen</button>
-        <div id="image-upload-result"></div>
-        <div id="upload-status"></div>
+      <section id="image-source-section">
+        <h2>1. Bildquelle Auswählen</h2>
+        <div class="tabs">
+          <button class="tab-button active" data-target="image-upload-content">
+            Bild Hochladen
+          </button>
+          <button class="tab-button" data-target="ai-generation-content">
+            AI Bild Generieren
+          </button>
+        </div>
+
+        <div id="image-upload-content" class="tab-content active">
+          <h3>Bild Hochladen</h3>
+          <input
+            type="file"
+            id="image-upload-input"
+            accept=".png, .jpg, .jpeg"
+          />
+          <button id="image-upload-button">Für Design Verwenden</button>
+          <div id="upload-status"></div>
+          <div id="image-preview-upload"></div>
+        </div>
+
+        <div id="ai-generation-content" class="tab-content">
+          <h3>AI Bild Generieren (kostet 1 Token)</h3>
+          <label for="ai-prompt-input">Prompt eingeben:</label>
+          <textarea
+            id="ai-prompt-input"
+            rows="3"
+            placeholder="z.B. ein süßes Kätzchen im Cyberpunk-Stil"
+          ></textarea>
+          <button id="ai-generate-button">Generieren</button>
+          <div id="ai-status"></div>
+          <div id="ai-results-grid">
+            <!-- Generated images will appear here -->
+          </div>
+          <div id="image-preview-ai"></div>
+        </div>
+      </section>
+
+      <hr />
+
+      <section id="design-section">
+        <h2>2. T-Shirt Gestalten</h2>
+        <div class="design-layout">
+          <div class="design-controls">
+            <h3>Produkt Wählen</h3>
+            <div id="product-list">
+              <!-- Product options load here -->
+              <p>Lade Produkte...</p>
+            </div>
+            <h3>Farbe Wählen</h3>
+            <div id="color-swatches">
+              <!-- Color options load here -->
+              <p>Wähle zuerst ein Produkt.</p>
+            </div>
+            <h3>Größe & Menge</h3>
+            <!-- TODO: Add size/quantity controls -->
+          </div>
+          <div class="mockup-area-container">
+            <h3>Vorschau</h3>
+            <div id="mockup-area">
+              <div
+                id="mockup-background"
+                style="
+                  width: 300px;
+                  height: 350px;
+                  background-color: #ccc;
+                  position: relative;
+                  border: 1px solid #999;
+                  margin: 0 auto;
+                  background-image: url('placeholder-tshirt.png');
+                  background-size: contain;
+                  background-repeat: no-repeat;
+                  background-position: center;
+                "
+              >
+                <!-- Placeholder for T-shirt image -->
+                <img
+                  id="design-image-overlay"
+                  src=""
+                  alt="Design Vorschau"
+                  style="
+                    position: absolute;
+                    top: 20%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    width: 40%;
+                    height: auto;
+                    object-fit: contain;
+                    display: none;
+                  "
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="design-status"></div>
+        <button
+          id="proceed-to-checkout-button"
+          style="margin-top: 1rem; display: none"
+        >
+          Weiter zum Checkout
+        </button>
       </section>
 
       <hr />
 
       <section id="token-purchase-section">
-        <h2>Token Kaufen</h2>
-        <p>Kaufe Tokens, um AI-Bilder zu generieren.</p>
-        <!-- TODO: Add bundle selection later -->
+        <h2>Tokens Kaufen (Optional)</h2>
+        <p>Kaufe Tokens, um mehr AI-Bilder zu generieren.</p>
         <label for="email-input">Email:</label>
         <input
           type="email"
@@ -40,10 +137,10 @@
           required
         />
         <button id="buy-tokens-button">10 Tokens für €5 Kaufen</button>
-        <!-- Example bundle -->
-        <div id="payment-element-container" style="margin-top: 1rem">
-          <!-- Stripe Payment Element will be inserted here -->
-        </div>
+        <div
+          id="payment-element-container"
+          style="margin-top: 1rem; display: none"
+        ></div>
         <button
           id="submit-payment-button"
           style="display: none; margin-top: 1rem"
@@ -59,25 +156,12 @@
 
       <hr />
 
-      <!-- Placeholder Sections for Future Phases -->
-      <section id="ai-generation-section" style="display: none">
-        <h2>AI Bild Generieren</h2>
-        <!-- TODO: Phase 2 - Implement AI Generation UI -->
-      </section>
-
-      <section id="design-section" style="display: none">
-        <h2>T-Shirt Design</h2>
-        <!-- TODO: Phase 2/3 - Implement Design UI -->
-      </section>
-
+      <!-- Hidden Sections for Future -->
       <section id="checkout-section" style="display: none">
         <h2>Checkout</h2>
-        <!-- TODO: Phase 3 - Implement T-Shirt Checkout -->
       </section>
-
       <section id="recovery-section" style="display: none">
         <h2>Grant ID Wiederherstellung</h2>
-        <!-- TODO: Phase 1/2 - Implement Recovery UI -->
       </section>
     </main>
 
