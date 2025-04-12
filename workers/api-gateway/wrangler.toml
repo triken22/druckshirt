@@ -1,45 +1,45 @@
 # Top-level configuration
-name = "druckmeinshirt-api-gateway"
+name = "druckshirt-api-gateway"
 main = "src/index.ts"
-compatibility_date = "2024-05-15"
+compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
 
 # Bindings
 kv_namespaces = [
-  { binding = "STATE_KV", id = "0cc66f93317c4798af20561bb8c4aa23", preview_id = "0cc66f93317c4798af20561bb8c4aa23" } # Using Staging ID for preview
+  { binding = "STATE_KV", id = "<YOUR_KV_NAMESPACE_ID>" }
 ]
 
 r2_buckets = [
-  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-staging", preview_bucket_name = "druckmeinshirt-images-staging" }
+  { binding = "IMAGE_BUCKET", bucket_name = "<YOUR_R2_BUCKET_NAME>" }
 ]
 
 [[queues.producers]]
-queue = "token-fulfillment-queue-staging"
+queue = "druckshirt-token-fulfillment"
 binding = "TOKEN_QUEUE"
 
 [[queues.producers]]
-queue = "order-fulfillment-queue-staging"
+queue = "druckshirt-order-fulfillment"
 binding = "ORDER_QUEUE"
 
 # Environment: Staging
 [env.staging]
-name = "druckmeinshirt-api-gateway-staging"
+name = "druckshirt-api-gateway-staging"
 kv_namespaces = [
-  { binding = "STATE_KV", id = "0cc66f93317c4798af20561bb8c4aa23" }
+  { binding = "STATE_KV", id = "<YOUR_STAGING_KV_ID>" }
 ]
 r2_buckets = [
-  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-staging" }
+  { binding = "IMAGE_BUCKET", bucket_name = "<YOUR_STAGING_R2_BUCKET_NAME>" }
 ]
 [[env.staging.queues.producers]]
-queue = "token-fulfillment-queue-staging"
+queue = "druckshirt-token-fulfillment-staging"
 binding = "TOKEN_QUEUE"
 [[env.staging.queues.producers]]
-queue = "order-fulfillment-queue-staging"
+queue = "druckshirt-order-fulfillment-staging"
 binding = "ORDER_QUEUE"
 
 # Environment: Production
 [env.production]
-name = "druckmeinshirt-api-gateway-production"
+name = "druckshirt-api-gateway-production"
 kv_namespaces = [
   { binding = "STATE_KV", id = "59d2638e44714737923ac9c12452209b" }
 ]
@@ -52,6 +52,11 @@ binding = "TOKEN_QUEUE"
 [[env.production.queues.producers]]
 queue = "order-fulfillment-queue-production"
 binding = "ORDER_QUEUE"
+
+# Variables
+[vars]
+ALLOWED_ORIGINS = "http://localhost:3000"
+R2_PUBLIC_URL_PREFIX = "<YOUR_R2_PUBLIC_URL_PREFIX>"
 
 # Secrets are set via GitHub Actions during deploy
 # [vars]
