@@ -688,22 +688,38 @@ function handleProductSelection(event) {
   selectedProduct = availableProducts.find((p) => p.id === productId);
 
   if (selectedProduct) {
-    // Visually indicate selection
     productListDiv
       .querySelectorAll(".product-item")
       .forEach((item) => item.classList.remove("selected"));
     targetItem.classList.add("selected");
 
-    // Update color swatches based on selected product
+    // --- Update Mockup Background ---
+    const mockupBg = document.getElementById("mockup-background");
+    if (mockupBg && selectedProduct.default_image_url) {
+      // Set background image to the product's default image
+      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
+      mockupBg.style.backgroundColor = "transparent"; // Clear bg color if image is set
+      console.log(
+        "Set mockup background to product default:",
+        selectedProduct.default_image_url
+      );
+    } else if (mockupBg) {
+      mockupBg.style.backgroundImage = "none"; // Clear image if none provided
+      mockupBg.style.backgroundColor = "#ccc"; // Fallback color
+      console.log("Cleared mockup background, using fallback color.");
+    }
+    // --- End Update Mockup Background ---
+
     displayColorSwatches(selectedProduct);
-    sizeSelectorDiv.innerHTML = "<p>Wähle zuerst Farbe.</p>"; // Reset size selector
+    sizeSelectorDiv.innerHTML = "<p>Wähle zuerst Farbe.</p>";
+    selectedVariant = null;
     selectedSize = null;
     displayMessage(
       document.getElementById("design-status"),
       `${selectedProduct.name} ausgewählt.`,
       "info"
     );
-    checkDesignCompletion(); // Check if other parts are ready
+    checkDesignCompletion();
   } else {
     console.error("Selected product not found in availableProducts");
   }
@@ -742,33 +758,52 @@ function handleColorSelection(event) {
   const colorCode = targetSwatch.dataset.colorCode;
   const colorName = targetSwatch.dataset.colorName;
 
-  // Visually indicate selection
   colorSwatchesDiv
     .querySelectorAll(".color-swatch")
     .forEach((swatch) => swatch.classList.remove("selected"));
   targetSwatch.classList.add("selected");
 
-  // Find a variant matching the color (and potentially default size if needed later)
-  // For now, just store the selected color. Size selection comes later.
-  selectedVariant = { color: colorName, color_code: colorCode }; // Simplified for now
+  selectedVariant = { color: colorName, color_code: colorCode };
 
-  // Update Mockup Background Color (or image if available)
-  // This is a simplification; ideally, we'd load a specific variant mockup image
+  // --- Update Mockup Background ---
   const mockupBg = document.getElementById("mockup-background");
   if (mockupBg) {
-    mockupBg.style.backgroundColor = colorCode;
-    mockupBg.style.backgroundImage = "none"; // Remove placeholder if color is set
-    // TODO: Try to find and load a variant-specific mockup image if available from product data
+    // Try to find a variant-specific image URL provided by the backend
+    const matchingVariant = selectedProduct.variants?.find(
+      (v) => v.color === colorName
+    );
+    // Check if the variant object has an 'image' property (or similar)
+    const variantImageUrl =
+      matchingVariant?.image_url || matchingVariant?.image; // Adjust property name if needed
+
+    if (variantImageUrl) {
+      mockupBg.style.backgroundImage = `url('${variantImageUrl}')`;
+      mockupBg.style.backgroundColor = "transparent";
+      console.log("Set mockup background to variant image:", variantImageUrl);
+    } else if (selectedProduct.default_image_url) {
+      // Fallback to product default image if no specific variant image found
+      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
+      mockupBg.style.backgroundColor = "transparent";
+      console.log(
+        "Set mockup background to product default (variant fallback):",
+        selectedProduct.default_image_url
+      );
+    } else {
+      // Final fallback: use selected color code as background
+      mockupBg.style.backgroundImage = "none";
+      mockupBg.style.backgroundColor = colorCode;
+      console.log("Set mockup background color:", colorCode);
+    }
   }
+  // --- End Update Mockup Background ---
+
+  displaySizeSelector(selectedProduct, colorName);
+  selectedSize = null;
   displayMessage(
     document.getElementById("design-status"),
     `Farbe ${colorName} ausgewählt.`,
     "info"
   );
-
-  // TODO: Enable size selection / checkout button if design is complete
-  displaySizeSelector(selectedProduct, colorName);
-  selectedSize = null; // Reset size selection
   checkDesignCompletion();
 }
 
@@ -802,45 +837,191 @@ function showSection(sectionId) {
 }
 
 function getPlacementData() {
-  // Basic placement data - assumes single "front" placement
-  // Needs refinement based on Printful product capabilities and actual mockup dimensions
-  if (!designImageContainer || !designImageContainer.parentElement) return null;
+  // --- VERY IMPORTANT ---
+  // This function converts visual mockup interaction (pixels)
+  // into the INCH-based format required by the Printful API V2.
+  // It relies on several assumptions and placeholders that MUST be verified
+  // and potentially replaced with data fetched from the Printful Catalog API.
+  //
+  // ASSUMPTIONS:
+  // 1. Target DPI: Assumes Printful uses 150 DPI for print file calculations.
+  //    This MIGHT be incorrect. Check Printful guidelines.
+  // 2. Placement: Assumes the placement identifier is exactly "front".
+  //    This needs to be fetched from the product details if supporting other placements.
+  // 3. area_width / area_height: USES PLACEHOLDER VALUES (10 inches).
+  //    These dimensions of the *actual print area* in inches MUST be fetched
+  //    from the Printful Catalog API for the specific product variant and placement.
+  //    Using incorrect values will lead to incorrect positioning/sizing.
+  // -----------------
 
-  const containerRect = designImageContainer.getBoundingClientRect();
-  const mockupRect = designImageContainer.parentElement.getBoundingClientRect();
-
-  // Prevent division by zero if mockup area isn't rendered correctly
-  if (mockupRect.width === 0 || mockupRect.height === 0) {
-    console.error("Mockup area has zero dimensions.");
+  if (
+    !designImageContainer ||
+    !designImageContainer.parentElement ||
+    !selectedImageUrl
+  ) {
+    console.error("Missing elements or image URL for placement data.");
     return null;
   }
 
-  // Calculate relative position and size within the mockup parent (%)
-  // Note: Printful API v2 might expect pixel offsets and dimensions relative
-  // to a specific print area defined in their system, not the visual mockup.
-  // This calculation is a *placeholder* and needs verification against Printful's requirements.
-  const relativeTop =
-    ((containerRect.top - mockupRect.top) / mockupRect.height) * 100;
-  const relativeLeft =
-    ((containerRect.left - mockupRect.left) / mockupRect.width) * 100;
-  const relativeWidth = (containerRect.width / mockupRect.width) * 100;
+  const DPI = 150; // Assumed DPI - VERIFY THIS!
+  const PLACEHOLDER_AREA_WIDTH_INCHES = 12; // !! MUST BE REPLACED with actual print area width !!
+  const PLACEHOLDER_AREA_HEIGHT_INCHES = 16; // !! MUST BE REPLACED with actual print area height !!
+  const PLACEMENT_IDENTIFIER = "front"; // !! MUST BE REPLACED/CONFIRMED from product data !!
 
-  // Ensure values are non-negative
-  const top = Math.max(0, relativeTop);
-  const left = Math.max(0, relativeLeft);
-  const width = Math.max(1, relativeWidth); // Ensure width is at least 1%
+  const containerRect = designImageContainer.getBoundingClientRect();
+  const mockupRect = designImageContainer.parentElement.getBoundingClientRect(); // The visual mockup div
 
-  return {
-    // This structure is a GUESS based on potential Printful needs.
-    // It likely needs adjustment based on Printful API V2 docs for order items.
-    // Common approaches involve specifying area (e.g., "front", "back")
-    // and then offsets/dimensions within that area.
-    area: "front", // Example: Assuming front placement
-    width: width, // Width relative to print area (% or pixels? CHECK DOCS)
-    height: "auto", // Let Printful determine based on aspect ratio? CHECK DOCS
-    top: top, // Top offset (% or pixels? CHECK DOCS)
-    left: left, // Left offset (% or pixels? CHECK DOCS)
+  if (mockupRect.width === 0 || mockupRect.height === 0) {
+    console.error("Mockup area has zero dimensions visually.");
+    return null;
+  }
+
+  // Calculate dimensions and position in PIXELS relative to the mockup div
+  const pixelWidth = containerRect.width;
+  const pixelHeight = containerRect.height;
+  const pixelLeft = containerRect.left - mockupRect.left;
+  const pixelTop = containerRect.top - mockupRect.top;
+
+  // Convert pixel values to INCHES based on assumed DPI
+  const widthInches = pixelWidth / DPI;
+  const heightInches = pixelHeight / DPI;
+  const leftInches = pixelLeft / DPI;
+  const topInches = pixelTop / DPI;
+
+  // --- Structure based on Printful Docs ---
+  const placementData = {
+    placement: PLACEMENT_IDENTIFIER,
+    // technique: "dtg", // Optional, depends on product/placement
+    layers: [
+      {
+        type: "file",
+        url: selectedImageUrl, // The URL of the uploaded/generated image
+        // layer_options: [], // Optional e.g., for embroidery
+        position: {
+          // Dimensions of the print area (REQUIRED, use placeholders for now)
+          area_width: PLACEHOLDER_AREA_WIDTH_INCHES, // MUST REPLACE!
+          area_height: PLACEHOLDER_AREA_HEIGHT_INCHES, // MUST REPLACE!
+
+          // Dimensions of the design file itself in inches
+          width: parseFloat(widthInches.toFixed(4)),
+          height: parseFloat(heightInches.toFixed(4)),
+
+          // Offset of the design file from the top-left (0,0) of the print area in inches
+          top: parseFloat(topInches.toFixed(4)),
+          left: parseFloat(leftInches.toFixed(4)),
+        },
+      },
+    ],
   };
+
+  console.log(
+    "Generated Placement Data (NEEDS VALIDATION):",
+    JSON.stringify(placementData, null, 2)
+  );
+  return placementData;
+}
+
+// --- Modified Phase 2 & 3 Logic ---
+function handleProductSelection(event) {
+  const targetItem = event.target.closest(".product-item");
+  if (!targetItem || !targetItem.dataset.productId) return;
+
+  const productId = parseInt(targetItem.dataset.productId, 10);
+  selectedProduct = availableProducts.find((p) => p.id === productId);
+
+  if (selectedProduct) {
+    productListDiv
+      .querySelectorAll(".product-item")
+      .forEach((item) => item.classList.remove("selected"));
+    targetItem.classList.add("selected");
+
+    // --- Update Mockup Background ---
+    const mockupBg = document.getElementById("mockup-background");
+    if (mockupBg && selectedProduct.default_image_url) {
+      // Set background image to the product's default image
+      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
+      mockupBg.style.backgroundColor = "transparent"; // Clear bg color if image is set
+      console.log(
+        "Set mockup background to product default:",
+        selectedProduct.default_image_url
+      );
+    } else if (mockupBg) {
+      mockupBg.style.backgroundImage = "none"; // Clear image if none provided
+      mockupBg.style.backgroundColor = "#ccc"; // Fallback color
+      console.log("Cleared mockup background, using fallback color.");
+    }
+    // --- End Update Mockup Background ---
+
+    displayColorSwatches(selectedProduct);
+    sizeSelectorDiv.innerHTML = "<p>Wähle zuerst Farbe.</p>";
+    selectedVariant = null;
+    selectedSize = null;
+    displayMessage(
+      document.getElementById("design-status"),
+      `${selectedProduct.name} ausgewählt.`,
+      "info"
+    );
+    checkDesignCompletion();
+  } else {
+    console.error("Selected product not found in availableProducts");
+  }
+}
+
+function handleColorSelection(event) {
+  const targetSwatch = event.target.closest(".color-swatch");
+  if (!targetSwatch || !targetSwatch.dataset.colorCode || !selectedProduct)
+    return;
+
+  const colorCode = targetSwatch.dataset.colorCode;
+  const colorName = targetSwatch.dataset.colorName;
+
+  colorSwatchesDiv
+    .querySelectorAll(".color-swatch")
+    .forEach((swatch) => swatch.classList.remove("selected"));
+  targetSwatch.classList.add("selected");
+
+  selectedVariant = { color: colorName, color_code: colorCode };
+
+  // --- Update Mockup Background ---
+  const mockupBg = document.getElementById("mockup-background");
+  if (mockupBg) {
+    // Try to find a variant-specific image URL provided by the backend
+    const matchingVariant = selectedProduct.variants?.find(
+      (v) => v.color === colorName
+    );
+    // Check if the variant object has an 'image' property (or similar)
+    const variantImageUrl =
+      matchingVariant?.image_url || matchingVariant?.image; // Adjust property name if needed
+
+    if (variantImageUrl) {
+      mockupBg.style.backgroundImage = `url('${variantImageUrl}')`;
+      mockupBg.style.backgroundColor = "transparent";
+      console.log("Set mockup background to variant image:", variantImageUrl);
+    } else if (selectedProduct.default_image_url) {
+      // Fallback to product default image if no specific variant image found
+      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
+      mockupBg.style.backgroundColor = "transparent";
+      console.log(
+        "Set mockup background to product default (variant fallback):",
+        selectedProduct.default_image_url
+      );
+    } else {
+      // Final fallback: use selected color code as background
+      mockupBg.style.backgroundImage = "none";
+      mockupBg.style.backgroundColor = colorCode;
+      console.log("Set mockup background color:", colorCode);
+    }
+  }
+  // --- End Update Mockup Background ---
+
+  displaySizeSelector(selectedProduct, colorName);
+  selectedSize = null;
+  displayMessage(
+    document.getElementById("design-status"),
+    `Farbe ${colorName} ausgewählt.`,
+    "info"
+  );
+  checkDesignCompletion();
 }
 
 // --- Phase 3 Core Logic ---
@@ -1071,6 +1252,15 @@ async function initiateTshirtPayment() {
       "Fehler: Checkout-Details unvollständig oder Platzierungsfehler.",
       "error"
     );
+    console.error("Checkout details incomplete:", {
+      selectedProduct,
+      selectedVariant,
+      selectedSize,
+      selectedShippingOption,
+      selectedImageUrl,
+      quantity: quantityInput.value,
+      placement,
+    });
     return;
   }
   if (!stripe) {
