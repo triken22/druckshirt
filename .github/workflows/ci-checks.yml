@@ -31,7 +31,8 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # If using private packages
 
       - name: Placeholder - Run Checks
-        run: #echo "TODO: Add lint, format, typecheck, unit test steps here"
+        run: |
+          echo "TODO: Add lint, format, typecheck, unit test steps here"
 
   security:
     runs-on: ubuntu-latest
@@ -50,5 +51,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Placeholder - Comment Check
-        run: #echo "TODO: Add basic comment presence check (non-blocking)"
+        run: |
+          echo "TODO: Add basic comment presence check (non-blocking)"
         continue-on-error: true
