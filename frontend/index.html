@@ -12,7 +12,14 @@
     <header>
       <h1>DruckMeinShirt</h1>
       <nav>
-        <!-- TODO: Add navigation links -->
+        <button class="nav-button" data-target="design-section">Design</button>
+        <button class="nav-button" data-target="token-purchase-section">
+          Tokens
+        </button>
+        <button class="nav-button" data-target="recovery-section">
+          Grant ID Wiederherstellen
+        </button>
+        <!-- TODO: Links Impressum/Datenschutz -->
       </nav>
       <div id="token-balance-display">Tokens: Lade...</div>
     </header>
@@ -74,11 +81,22 @@
               <!-- Color options load here -->
               <p>Wähle zuerst ein Produkt.</p>
             </div>
-            <h3>Größe & Menge</h3>
-            <!-- TODO: Add size/quantity controls -->
+            <h3>Größe Wählen</h3>
+            <div id="size-selector">
+              <p>Wähle zuerst Farbe.</p>
+            </div>
+            <h3>Menge</h3>
+            <label for="quantity-input">Anzahl:</label>
+            <input
+              type="number"
+              id="quantity-input"
+              value="1"
+              min="1"
+              max="10"
+            />
           </div>
           <div class="mockup-area-container">
-            <h3>Vorschau</h3>
+            <h3>Vorschau & Bearbeitung</h3>
             <div id="mockup-area">
               <div
                 id="mockup-background"
@@ -96,22 +114,43 @@
                 "
               >
                 <!-- Placeholder for T-shirt image -->
-                <img
-                  id="design-image-overlay"
-                  src=""
-                  alt="Design Vorschau"
+                <div
+                  id="design-image-container"
                   style="
                     position: absolute;
-                    top: 20%;
-                    left: 50%;
-                    transform: translateX(-50%);
+                    top: 25%;
+                    left: 30%;
                     width: 40%;
-                    height: auto;
-                    object-fit: contain;
-                    display: none;
+                    cursor: grab;
                   "
-                />
+                >
+                  <img
+                    id="design-image-overlay"
+                    src=""
+                    alt="Design Vorschau"
+                    style="
+                      width: 100%;
+                      height: auto;
+                      object-fit: contain;
+                      display: none;
+                      pointer-events: none;
+                    "
+                  />
+                  <!-- Basic Resize Handle -->
+                  <div class="resize-handle"></div>
+                </div>
               </div>
+            </div>
+            <div class="mockup-controls">
+              <label for="image-scale-slider">Größe:</label>
+              <input
+                type="range"
+                id="image-scale-slider"
+                min="0.1"
+                max="1.5"
+                step="0.05"
+                value="1"
+              />
             </div>
           </div>
         </div>
@@ -119,9 +158,59 @@
         <button
           id="proceed-to-checkout-button"
           style="margin-top: 1rem; display: none"
+          disabled
         >
           Weiter zum Checkout
         </button>
+      </section>
+
+      <hr />
+
+      <section id="checkout-section" style="display: none">
+        <h2>3. Bestellung Abschließen</h2>
+        <div id="order-summary"></div>
+        <form id="shipping-form">
+          <h3>Lieferadresse</h3>
+          <label for="shipping-name">Name:</label>
+          <input type="text" id="shipping-name" required />
+          <label for="shipping-address1">Adresse Zeile 1:</label>
+          <input type="text" id="shipping-address1" required />
+          <label for="shipping-address2">Adresse Zeile 2 (Optional):</label>
+          <input type="text" id="shipping-address2" />
+          <label for="shipping-city">Stadt:</label>
+          <input type="text" id="shipping-city" required />
+          <label for="shipping-zip">PLZ:</label>
+          <input type="text" id="shipping-zip" required />
+          <label for="shipping-country">Land:</label>
+          <select id="shipping-country" required>
+            <option value="DE">Deutschland</option>
+            <option value="AT">Österreich</option>
+            <option value="CH">Schweiz</option>
+            <!-- TODO: Add other EU countries if needed -->
+          </select>
+          <label for="shipping-email">Email (für Bestellupdates):</label>
+          <input type="email" id="shipping-email" required />
+          <button type="button" id="get-shipping-button">
+            Versandoptionen Anzeigen
+          </button>
+        </form>
+        <div id="shipping-options-container" style="margin-top: 1rem">
+          <h3>Versandart Wählen</h3>
+          <div id="shipping-options-list"></div>
+          <div id="shipping-status"></div>
+        </div>
+        <div
+          id="tshirt-payment-container"
+          style="margin-top: 1rem; display: none"
+        >
+          <h3>Zahlung</h3>
+          <div id="tshirt-payment-element-container"></div>
+          <button id="submit-tshirt-order-button" style="margin-top: 1rem">
+            Bestellung Bezahlen
+          </button>
+          <div id="tshirt-payment-message"></div>
+        </div>
+        <div id="order-confirmation-message" style="margin-top: 1rem"></div>
       </section>
 
       <hr />
@@ -156,12 +245,18 @@
 
       <hr />
 
-      <!-- Hidden Sections for Future -->
-      <section id="checkout-section" style="display: none">
-        <h2>Checkout</h2>
-      </section>
       <section id="recovery-section" style="display: none">
         <h2>Grant ID Wiederherstellung</h2>
+        <p>
+          Gib deine Email-Adresse ein, um deine gekauften Grant IDs
+          wiederherzustellen.
+        </p>
+        <label for="recovery-email-input">Email:</label>
+        <input type="email" id="recovery-email-input" required />
+        <button id="recovery-request-button">
+          Wiederherstellung Anfordern
+        </button>
+        <div id="recovery-message"></div>
       </section>
     </main>
 

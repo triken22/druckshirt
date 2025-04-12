@@ -53,6 +53,46 @@ let selectedProduct = null;
 let selectedVariant = null;
 let selectedImageUrl = null; // URL of the image chosen for design
 
+// --- DOM Elements (Add Phase 3) ---
+let sizeSelectorDiv, quantityInput, proceedToCheckoutButton;
+let checkoutSection,
+  orderSummaryDiv,
+  shippingForm,
+  shippingNameInput,
+  shippingAddress1Input,
+  shippingAddress2Input,
+  shippingCityInput,
+  shippingZipInput,
+  shippingCountrySelect,
+  shippingEmailInput,
+  getShippingButton;
+let shippingOptionsContainer, shippingOptionsListDiv, shippingStatusDiv;
+let tshirtPaymentContainer,
+  tshirtPaymentElementContainer,
+  submitTshirtOrderButton,
+  tshirtPaymentMessage;
+let recoverySection,
+  recoveryEmailInput,
+  recoveryRequestButton,
+  recoveryMessageDiv;
+let designImageContainer, imageScaleSlider;
+let navButtons;
+
+// --- State Variables (Add Phase 3) ---
+let selectedSize = null;
+let shippingOptions = [];
+let selectedShippingOption = null;
+let tshirtClientSecret = null;
+let tshirtPaymentElement = null;
+
+// Mockup Interaction State
+let isDragging = false;
+let dragStartX, dragStartY;
+let imageStartLeft, imageStartTop;
+let isResizing = false;
+let resizeStartX, resizeStartY;
+let imageStartWidth, imageStartHeight;
+
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", async () => {
   // Select DOM Elements
@@ -82,6 +122,44 @@ document.addEventListener("DOMContentLoaded", async () => {
   mockupImageOverlay = document.getElementById("design-image-overlay");
   tabButtons = document.querySelectorAll(".tab-button");
   tabContents = document.querySelectorAll(".tab-content");
+
+  // Select Phase 3 Elements
+  sizeSelectorDiv = document.getElementById("size-selector");
+  quantityInput = document.getElementById("quantity-input");
+  proceedToCheckoutButton = document.getElementById(
+    "proceed-to-checkout-button"
+  );
+  checkoutSection = document.getElementById("checkout-section");
+  orderSummaryDiv = document.getElementById("order-summary");
+  shippingForm = document.getElementById("shipping-form");
+  shippingNameInput = document.getElementById("shipping-name");
+  shippingAddress1Input = document.getElementById("shipping-address1");
+  shippingAddress2Input = document.getElementById("shipping-address2");
+  shippingCityInput = document.getElementById("shipping-city");
+  shippingZipInput = document.getElementById("shipping-zip");
+  shippingCountrySelect = document.getElementById("shipping-country");
+  shippingEmailInput = document.getElementById("shipping-email");
+  getShippingButton = document.getElementById("get-shipping-button");
+  shippingOptionsContainer = document.getElementById(
+    "shipping-options-container"
+  );
+  shippingOptionsListDiv = document.getElementById("shipping-options-list");
+  shippingStatusDiv = document.getElementById("shipping-status");
+  tshirtPaymentContainer = document.getElementById("tshirt-payment-container");
+  tshirtPaymentElementContainer = document.getElementById(
+    "tshirt-payment-element-container"
+  );
+  submitTshirtOrderButton = document.getElementById(
+    "submit-tshirt-order-button"
+  );
+  tshirtPaymentMessage = document.getElementById("tshirt-payment-message");
+  recoverySection = document.getElementById("recovery-section");
+  recoveryEmailInput = document.getElementById("recovery-email-input");
+  recoveryRequestButton = document.getElementById("recovery-request-button");
+  recoveryMessageDiv = document.getElementById("recovery-message");
+  designImageContainer = document.getElementById("design-image-container");
+  imageScaleSlider = document.getElementById("image-scale-slider");
+  navButtons = document.querySelectorAll(".nav-button");
 
   // Initialize Stripe
   if (STRIPE_PUBLISHABLE_KEY === "pk_test_YOUR_KEY_HERE") {
@@ -137,9 +215,58 @@ document.addEventListener("DOMContentLoaded", async () => {
     colorSwatchesDiv.addEventListener("click", handleColorSelection);
   }
 
+  // Add Phase 3 Listeners
+  if (sizeSelectorDiv) {
+    sizeSelectorDiv.addEventListener("click", handleSizeSelection);
+  }
+  if (quantityInput) {
+    quantityInput.addEventListener("change", checkDesignCompletion);
+  }
+  if (proceedToCheckoutButton) {
+    proceedToCheckoutButton.addEventListener("click", showCheckoutSection);
+  }
+  if (getShippingButton) {
+    getShippingButton.addEventListener("click", handleGetShippingOptions);
+  }
+  if (shippingOptionsListDiv) {
+    shippingOptionsListDiv.addEventListener(
+      "click",
+      handleShippingOptionSelection
+    );
+  }
+  if (submitTshirtOrderButton) {
+    submitTshirtOrderButton.addEventListener("click", handleSubmitTshirtOrder);
+  }
+  if (recoveryRequestButton) {
+    recoveryRequestButton.addEventListener("click", handleRecoveryRequest);
+  }
+  if (navButtons) {
+    navButtons.forEach((button) => {
+      button.addEventListener("click", () =>
+        showSection(button.dataset.target)
+      );
+    });
+  }
+  // Mockup Interaction Listeners
+  if (designImageContainer) {
+    designImageContainer.addEventListener("mousedown", startDragging);
+    const resizeHandle = designImageContainer.querySelector(".resize-handle");
+    if (resizeHandle) {
+      resizeHandle.addEventListener("mousedown", startResizing);
+    }
+  }
+  if (imageScaleSlider) {
+    imageScaleSlider.addEventListener("input", handleScaleSlider);
+  }
+  document.addEventListener("mousemove", handleDraggingOrResizing);
+  document.addEventListener("mouseup", stopDraggingOrResizing);
+
   // Initial Token Balance Check
   fetchAndDisplayTokenBalance();
   fetchAndDisplayProducts();
+
+  // Show initial section (design)
+  showSection("design-section");
 });
 
 // --- Helper Functions ---
@@ -425,14 +552,17 @@ function switchTab(targetId) {
 }
 
 function updateMockupImage(imageUrl) {
-  selectedImageUrl = imageUrl; // Store the selected URL
+  selectedImageUrl = imageUrl;
   if (mockupImageOverlay) {
     mockupImageOverlay.src = imageUrl;
     mockupImageOverlay.style.display = imageUrl ? "block" : "none";
-  } else {
-    console.error("Mockup image overlay element not found");
+    // Reset scale and position when new image is loaded
+    designImageContainer.style.width = "40%"; // Reset width
+    designImageContainer.style.left = "30%";
+    designImageContainer.style.top = "25%";
+    imageScaleSlider.value = 1; // Reset slider
   }
-  // TODO: Enable checkout button if design is complete
+  checkDesignCompletion();
 }
 
 // --- Phase 2 Core Logic ---
@@ -566,13 +696,14 @@ function handleProductSelection(event) {
 
     // Update color swatches based on selected product
     displayColorSwatches(selectedProduct);
-    selectedVariant = null; // Reset variant selection
-    // TODO: Update Mockup base image if available in product data
+    sizeSelectorDiv.innerHTML = "<p>Wähle zuerst Farbe.</p>"; // Reset size selector
+    selectedSize = null;
     displayMessage(
       document.getElementById("design-status"),
       `${selectedProduct.name} ausgewählt.`,
       "info"
     );
+    checkDesignCompletion(); // Check if other parts are ready
   } else {
     console.error("Selected product not found in availableProducts");
   }
@@ -636,7 +767,560 @@ function handleColorSelection(event) {
   );
 
   // TODO: Enable size selection / checkout button if design is complete
+  displaySizeSelector(selectedProduct, colorName);
+  selectedSize = null; // Reset size selection
+  checkDesignCompletion();
 }
 
-// TODO: Implement PostHog integration if needed for Phase 1, or defer
+// --- Phase 3 Helper Functions ---
+function checkDesignCompletion() {
+  const isComplete =
+    selectedProduct &&
+    selectedVariant && // Includes color
+    selectedSize &&
+    selectedImageUrl &&
+    quantityInput.value >= 1;
+
+  if (proceedToCheckoutButton) {
+    proceedToCheckoutButton.disabled = !isComplete;
+    displayMessage(
+      document.getElementById("design-status"),
+      isComplete
+        ? "Design bereit für Checkout."
+        : "Bitte vervollständige dein Design (Produkt, Farbe, Größe, Bild, Menge).",
+      isComplete ? "success" : "info"
+    );
+  }
+  return isComplete; // Return status for other functions
+}
+
+function showSection(sectionId) {
+  document.querySelectorAll("main > section").forEach((section) => {
+    section.style.display = section.id === sectionId ? "block" : "none";
+  });
+  // TODO: Update nav button active state if needed
+}
+
+function getPlacementData() {
+  // Basic placement data - assumes single "front" placement
+  // Needs refinement based on Printful product capabilities and actual mockup dimensions
+  if (!designImageContainer || !designImageContainer.parentElement) return null;
+
+  const containerRect = designImageContainer.getBoundingClientRect();
+  const mockupRect = designImageContainer.parentElement.getBoundingClientRect();
+
+  // Prevent division by zero if mockup area isn't rendered correctly
+  if (mockupRect.width === 0 || mockupRect.height === 0) {
+    console.error("Mockup area has zero dimensions.");
+    return null;
+  }
+
+  // Calculate relative position and size within the mockup parent (%)
+  // Note: Printful API v2 might expect pixel offsets and dimensions relative
+  // to a specific print area defined in their system, not the visual mockup.
+  // This calculation is a *placeholder* and needs verification against Printful's requirements.
+  const relativeTop =
+    ((containerRect.top - mockupRect.top) / mockupRect.height) * 100;
+  const relativeLeft =
+    ((containerRect.left - mockupRect.left) / mockupRect.width) * 100;
+  const relativeWidth = (containerRect.width / mockupRect.width) * 100;
+
+  // Ensure values are non-negative
+  const top = Math.max(0, relativeTop);
+  const left = Math.max(0, relativeLeft);
+  const width = Math.max(1, relativeWidth); // Ensure width is at least 1%
+
+  return {
+    // This structure is a GUESS based on potential Printful needs.
+    // It likely needs adjustment based on Printful API V2 docs for order items.
+    // Common approaches involve specifying area (e.g., "front", "back")
+    // and then offsets/dimensions within that area.
+    area: "front", // Example: Assuming front placement
+    width: width, // Width relative to print area (% or pixels? CHECK DOCS)
+    height: "auto", // Let Printful determine based on aspect ratio? CHECK DOCS
+    top: top, // Top offset (% or pixels? CHECK DOCS)
+    left: left, // Left offset (% or pixels? CHECK DOCS)
+  };
+}
+
+// --- Phase 3 Core Logic ---
+
+function displaySizeSelector(product, selectedColorName) {
+  if (!sizeSelectorDiv) return;
+  sizeSelectorDiv.innerHTML = ""; // Clear previous
+
+  // Find variants that match the selected color
+  const variantsOfColor = product.variants.filter(
+    (v) => v.color === selectedColorName && v.in_stock
+  );
+
+  if (variantsOfColor.length === 0) {
+    sizeSelectorDiv.innerHTML =
+      "<p>Keine Größen für diese Farbe verfügbar.</p>";
+    return;
+  }
+
+  // Create buttons for each available size
+  const availableSizes = [...new Set(variantsOfColor.map((v) => v.size))]; // Unique sizes for the color
+  availableSizes.sort(); // Optional: sort sizes
+
+  availableSizes.forEach((size) => {
+    const button = document.createElement("button");
+    button.classList.add("size-button");
+    button.textContent = size;
+    button.dataset.size = size;
+    sizeSelectorDiv.appendChild(button);
+  });
+}
+
+function handleSizeSelection(event) {
+  const targetButton = event.target.closest(".size-button");
+  if (
+    !targetButton ||
+    !targetButton.dataset.size ||
+    !selectedProduct ||
+    !selectedVariant
+  )
+    return;
+
+  selectedSize = targetButton.dataset.size;
+
+  // Find the specific variant ID based on product, color, and size
+  const variant = selectedProduct.variants.find(
+    (v) => v.color === selectedVariant.color && v.size === selectedSize
+  );
+
+  if (variant) {
+    selectedVariant.id = variant.id; // Store the crucial catalog_variant_id
+    // Visually indicate selection
+    sizeSelectorDiv
+      .querySelectorAll(".size-button")
+      .forEach((btn) => btn.classList.remove("selected"));
+    targetButton.classList.add("selected");
+    displayMessage(
+      document.getElementById("design-status"),
+      `Größe ${selectedSize} ausgewählt.`,
+      "info"
+    );
+  } else {
+    console.error("Could not find matching variant ID for selection");
+    selectedSize = null;
+    displayMessage(
+      document.getElementById("design-status"),
+      "Fehler: Passende Variante nicht gefunden.",
+      "error"
+    );
+  }
+  checkDesignCompletion();
+}
+
+function showCheckoutSection() {
+  if (!checkDesignCompletion()) return; // Should be disabled, but double-check
+
+  // Populate Order Summary
+  const quantity = quantityInput.value;
+  orderSummaryDiv.innerHTML = `
+    <h4>Bestellübersicht</h4>
+    <p>Produkt: ${selectedProduct.name}</p>
+    <p>Farbe: ${selectedVariant.color}</p>
+    <p>Größe: ${selectedSize}</p>
+    <p>Menge: ${quantity}</p>
+    <img src="${selectedImageUrl}" alt="Design" style="max-width: 100px; margin-top: 0.5rem;">
+    <p><strong>Preis:</strong> Wird nach Versandoptionen berechnet.</p>
+  `;
+
+  // Show the checkout section
+  showSection("checkout-section");
+
+  // Reset shipping/payment sections within checkout
+  shippingOptionsContainer.style.display = "none";
+  tshirtPaymentContainer.style.display = "none";
+  shippingOptionsListDiv.innerHTML = "";
+  if (tshirtPaymentElement) tshirtPaymentElement.destroy(); // Clean up previous element
+  tshirtPaymentElementContainer.innerHTML = "";
+  displayMessage(shippingStatusDiv, "");
+  displayMessage(tshirtPaymentMessage, "");
+  document.getElementById("order-confirmation-message").innerHTML = "";
+  document.getElementById("shipping-form").style.display = "block"; // Ensure form is visible
+}
+
+async function handleGetShippingOptions() {
+  if (!shippingForm.checkValidity()) {
+    displayMessage(
+      shippingStatusDiv,
+      "Bitte fülle alle erforderlichen Adressfelder aus.",
+      "error"
+    );
+    shippingForm.reportValidity();
+    return;
+  }
+  if (!selectedVariant || !selectedVariant.id || quantityInput.value < 1) {
+    displayMessage(
+      shippingStatusDiv,
+      "Fehler: Ungültige Bestelldetails.",
+      "error"
+    );
+    return;
+  }
+
+  const recipient = {
+    address1: shippingAddress1Input.value,
+    address2: shippingAddress2Input.value || undefined,
+    city: shippingCityInput.value,
+    zip: shippingZipInput.value,
+    country_code: shippingCountrySelect.value,
+  };
+  const items = [
+    {
+      catalog_variant_id: selectedVariant.id,
+      quantity: parseInt(quantityInput.value, 10),
+    },
+  ];
+
+  displayMessage(shippingStatusDiv, "Suche Versandoptionen...", "info");
+  setLoadingState(getShippingButton, true);
+  shippingOptionsContainer.style.display = "block";
+  shippingOptionsListDiv.innerHTML = "";
+  tshirtPaymentContainer.style.display = "none";
+  selectedShippingOption = null;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/printful/shipping-options`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recipient, items }),
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+    }
+
+    shippingOptions = data.shipping_options || [];
+    if (shippingOptions.length === 0) {
+      displayMessage(
+        shippingStatusDiv,
+        "Keine Versandoptionen für diese Adresse gefunden.",
+        "info"
+      );
+      return;
+    }
+
+    // Display options
+    shippingOptions.forEach((option) => {
+      const div = document.createElement("div");
+      div.classList.add("shipping-option");
+      div.dataset.optionId = option.id;
+      const price = (option.rate / 100).toFixed(2);
+      div.innerHTML = `<strong>${option.name}</strong> - €${price} (Lieferzeit: ${option.min_delivery_days}-${option.max_delivery_days} Tage)`;
+      shippingOptionsListDiv.appendChild(div);
+    });
+    displayMessage(
+      shippingStatusDiv,
+      "Bitte wähle eine Versandart.",
+      "success"
+    );
+  } catch (error) {
+    console.error("Error fetching shipping options:", error);
+    displayMessage(
+      shippingStatusDiv,
+      `Fehler beim Laden der Versandoptionen: ${error.message}`,
+      "error"
+    );
+  } finally {
+    setLoadingState(getShippingButton, false);
+  }
+}
+
+function handleShippingOptionSelection(event) {
+  const targetOption = event.target.closest(".shipping-option");
+  if (!targetOption || !targetOption.dataset.optionId) return;
+
+  const optionId = targetOption.dataset.optionId;
+  selectedShippingOption = shippingOptions.find((opt) => opt.id === optionId);
+
+  if (selectedShippingOption) {
+    shippingOptionsListDiv
+      .querySelectorAll(".shipping-option")
+      .forEach((opt) => opt.classList.remove("selected"));
+    targetOption.classList.add("selected");
+    displayMessage(
+      shippingStatusDiv,
+      `Versandart ausgewählt: ${selectedShippingOption.name}`,
+      "success"
+    );
+    initiateTshirtPayment();
+  } else {
+    console.error("Selected shipping option not found");
+  }
+}
+
+async function initiateTshirtPayment() {
+  const placement = getPlacementData();
+  if (
+    !selectedProduct ||
+    !selectedVariant ||
+    !selectedSize ||
+    !selectedShippingOption ||
+    !selectedImageUrl ||
+    quantityInput.value < 1 ||
+    !placement
+  ) {
+    displayMessage(
+      tshirtPaymentMessage,
+      "Fehler: Checkout-Details unvollständig oder Platzierungsfehler.",
+      "error"
+    );
+    return;
+  }
+  if (!stripe) {
+    displayMessage(
+      tshirtPaymentMessage,
+      "Stripe ist nicht initialisiert.",
+      "error"
+    );
+    return;
+  }
+
+  const orderDetails = {
+    items: [
+      {
+        catalog_variant_id: selectedVariant.id,
+        quantity: parseInt(quantityInput.value, 10),
+        design_url: selectedImageUrl,
+        placement: placement, // Include calculated placement
+      },
+    ],
+    shipping_address: {
+      name: shippingNameInput.value,
+      address1: shippingAddress1Input.value,
+      address2: shippingAddress2Input.value || undefined,
+      city: shippingCityInput.value,
+      zip: shippingZipInput.value,
+      country_code: shippingCountrySelect.value,
+      email: shippingEmailInput.value,
+    },
+    shipping_option_id: selectedShippingOption.id,
+  };
+
+  displayMessage(
+    tshirtPaymentMessage,
+    "Initialisiere T-Shirt Zahlung... ",
+    "info"
+  );
+  tshirtPaymentContainer.style.display = "block";
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/stripe/create-tshirt-order-intent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_details: orderDetails }),
+      }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+    }
+
+    tshirtClientSecret = data.client_secret;
+
+    // Mount Stripe Payment Element for T-Shirt order
+    if (tshirtPaymentElement) {
+      tshirtPaymentElement.destroy();
+    }
+    const elements = stripe.elements({ clientSecret: tshirtClientSecret });
+    tshirtPaymentElement = elements.create("payment");
+    tshirtPaymentElement.mount("#tshirt-payment-element-container");
+
+    displayMessage(
+      tshirtPaymentMessage,
+      "Bitte gib deine Zahlungsdaten ein.",
+      "info"
+    );
+  } catch (error) {
+    console.error("Error initiating T-Shirt payment:", error);
+    displayMessage(tshirtPaymentMessage, `Fehler: ${error.message}`, "error");
+    tshirtPaymentContainer.style.display = "none";
+  }
+}
+
+async function handleSubmitTshirtOrder() {
+  if (!stripe || !tshirtPaymentElement || !tshirtClientSecret) {
+    displayMessage(
+      tshirtPaymentMessage,
+      "Zahlungselement nicht bereit.",
+      "error"
+    );
+    return;
+  }
+
+  setLoadingState(submitTshirtOrderButton, true);
+  displayMessage(tshirtPaymentMessage, "Verarbeite Zahlung...", "info");
+  let paymentIntentStatus = null; // Track status for finally block
+
+  try {
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements: tshirtPaymentElement,
+      confirmParams: {
+        /* return_url: `${window.location.origin}/order-confirmation` */
+      },
+      redirect: "if_required",
+    });
+
+    if (error) {
+      if (error.type === "card_error" || error.type === "validation_error") {
+        displayMessage(tshirtPaymentMessage, error.message, "error");
+      } else {
+        displayMessage(
+          tshirtPaymentMessage,
+          "Ein unerwarteter Fehler ist aufgetreten.",
+          "error"
+        );
+        console.error("Stripe confirmPayment error (T-Shirt):", error);
+      }
+      setLoadingState(submitTshirtOrderButton, false);
+      return;
+    }
+
+    paymentIntentStatus = paymentIntent.status;
+    // Handle successful payment
+    if (paymentIntent.status === "succeeded") {
+      displayMessage(
+        tshirtPaymentMessage,
+        "Zahlung erfolgreich! Bestellung wird verarbeitet.",
+        "success"
+      );
+      document.getElementById(
+        "order-confirmation-message"
+      ).innerHTML = `<h4>Vielen Dank für deine Bestellung!</h4><p>Eine Bestätigung wird in Kürze an ${shippingEmailInput.value} gesendet.</p>`;
+      // Disable forms, hide payment element etc.
+      shippingForm.style.display = "none";
+      shippingOptionsContainer.style.display = "none";
+      tshirtPaymentContainer.style.display = "none";
+      // TODO: Capture PostHog event for tshirt_order_completed
+    } else if (paymentIntent.status === "requires_action") {
+      displayMessage(
+        tshirtPaymentMessage,
+        "Weitere Aktion zur Bestätigung der Zahlung erforderlich.",
+        "info"
+      );
+      // Need to keep loading state potentially
+      setLoadingState(submitTshirtOrderButton, false); // Reset loading state here as action is needed
+    } else {
+      displayMessage(
+        tshirtPaymentMessage,
+        `Zahlungsstatus: ${paymentIntent.status}`,
+        "info"
+      );
+      setLoadingState(submitTshirtOrderButton, false);
+    }
+  } catch (error) {
+    console.error("Error processing T-Shirt payment:", error);
+    displayMessage(
+      tshirtPaymentMessage,
+      "Fehler bei der Zahlungsabwicklung.",
+      "error"
+    );
+    setLoadingState(submitTshirtOrderButton, false);
+  } finally {
+    // Keep button enabled if payment didn't succeed definitively
+    if (paymentIntentStatus !== "succeeded") {
+      setLoadingState(submitTshirtOrderButton, false);
+    }
+  }
+}
+
+// --- Mockup Interaction Logic ---
+
+function startDragging(e) {
+  // Prevent default only for the image container itself, not handles
+  if (e.target === designImageContainer) {
+    e.preventDefault();
+    isDragging = true;
+    designImageContainer.style.cursor = "grabbing";
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    imageStartLeft = designImageContainer.offsetLeft;
+    imageStartTop = designImageContainer.offsetTop;
+  }
+}
+
+function startResizing(e) {
+  e.preventDefault();
+  e.stopPropagation(); // Prevent triggering drag on the container
+  isResizing = true;
+  resizeStartX = e.clientX;
+  resizeStartY = e.clientY;
+  imageStartWidth = designImageContainer.offsetWidth;
+}
+
+function handleDraggingOrResizing(e) {
+  if (isDragging) {
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    let newLeft = imageStartLeft + dx;
+    let newTop = imageStartTop + dy;
+
+    // Basic boundary checks (relative to parent)
+    const parent = designImageContainer.parentElement;
+    newLeft = Math.max(
+      0,
+      Math.min(newLeft, parent.offsetWidth - designImageContainer.offsetWidth)
+    );
+    newTop = Math.max(
+      0,
+      Math.min(newTop, parent.offsetHeight - designImageContainer.offsetHeight)
+    );
+
+    designImageContainer.style.left = `${newLeft}px`;
+    designImageContainer.style.top = `${newTop}px`;
+  } else if (isResizing) {
+    const dx = e.clientX - resizeStartX;
+    const scaleFactor = (imageStartWidth + dx) / imageStartWidth;
+
+    let newWidth = imageStartWidth * scaleFactor;
+    const parentWidth = designImageContainer.parentElement.offsetWidth;
+    const minWidth = 50; // Minimum pixel width
+    newWidth = Math.max(minWidth, Math.min(newWidth, parentWidth)); // Max width is parent width
+
+    designImageContainer.style.width = `${newWidth}px`;
+
+    // Update slider to reflect manual resize
+    const maxSlider = parseFloat(imageScaleSlider.max);
+    const minSlider = parseFloat(imageScaleSlider.min);
+    const initialWidthRatio = 0.4;
+    const currentWidthRatio = newWidth / parentWidth;
+    const sliderValue = currentWidthRatio / initialWidthRatio;
+    if (imageScaleSlider)
+      imageScaleSlider.value = Math.max(
+        minSlider,
+        Math.min(sliderValue, maxSlider)
+      );
+  }
+}
+
+function stopDraggingOrResizing() {
+  if (isDragging) {
+    isDragging = false;
+    designImageContainer.style.cursor = "grab";
+    checkDesignCompletion(); // Placement might affect completion
+  }
+  if (isResizing) {
+    isResizing = false;
+    checkDesignCompletion(); // Size might affect completion
+  }
+}
+
+function handleScaleSlider() {
+  if (!imageScaleSlider || !designImageContainer) return;
+  const scaleValue = parseFloat(imageScaleSlider.value);
+  const initialWidthPercent = 40; // The initial width set in CSS/HTML
+  const newWidthPercent = initialWidthPercent * scaleValue;
+  designImageContainer.style.width = `${newWidthPercent}%`;
+  checkDesignCompletion();
+}
+
+// TODO: Implement PostHog integration
 // import posthog from 'posthog-js';

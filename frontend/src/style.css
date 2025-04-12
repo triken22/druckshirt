@@ -289,3 +289,155 @@ footer {
   }
   /* Existing media queries... */
 }
+
+/* --- Phase 3 Styles --- */
+
+/* Navigation Buttons */
+header nav button {
+  background: #555;
+  margin: 0 0.5rem;
+}
+header nav button:hover {
+  background: #777;
+}
+
+/* Size Selector */
+#size-selector {
+  margin-bottom: 1rem;
+}
+
+.size-button {
+  padding: 0.5rem 1rem;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #ccc;
+  background: #eee;
+  cursor: pointer;
+}
+
+.size-button.selected {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
+
+/* Quantity Input */
+input[type="number"] {
+  width: 80px; /* Smaller width for quantity */
+}
+
+/* Mockup Interaction */
+#mockup-background {
+  width: 300px; /* Example fixed size */
+  height: 350px;
+  background-color: #ccc;
+  position: relative;
+  border: 1px solid #999;
+  margin: 0 auto;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  overflow: hidden; /* Hide parts of image dragged outside */
+}
+
+#design-image-container {
+  position: absolute;
+  cursor: grab; /* Indicate draggable */
+}
+
+#design-image-container:active {
+  cursor: grabbing;
+}
+
+.resize-handle {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  background-color: #333;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  cursor: nwse-resize;
+}
+
+.mockup-controls {
+  margin-top: 1rem;
+}
+
+#image-scale-slider {
+  width: 80%;
+  max-width: 250px;
+}
+
+/* Checkout Section */
+#checkout-section {
+  /* Styles specific to checkout */
+}
+
+#shipping-form label,
+#order-summary p,
+#shipping-options-container h3,
+#tshirt-payment-container h3 {
+  margin-top: 1rem;
+}
+
+#shipping-form input,
+#shipping-form select {
+  /* Inherits general input styles, add specifics if needed */
+}
+
+#shipping-options-list {
+  margin-top: 0.5rem;
+}
+
+.shipping-option {
+  padding: 0.8rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #eee;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.shipping-option:hover {
+  background-color: #f9f9f9;
+}
+
+.shipping-option.selected {
+  background-color: #eef;
+  border-color: #aac;
+}
+
+#tshirt-payment-element-container {
+  /* Similar to token purchase container */
+  border: 1px solid #ccc;
+  padding: 1rem;
+  border-radius: 5px;
+  min-height: 100px;
+}
+
+#order-confirmation-message {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: #e6ffed;
+  border: 1px solid #b7ebc9;
+  border-radius: 5px;
+  color: #25603a;
+}
+
+/* Recovery Section */
+#recovery-section input[type="email"] {
+  /* Inherits general input styles */
+}
+
+#recovery-message {
+  margin-top: 1rem;
+  font-style: italic;
+}
+
+/* General adjustments */
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
