@@ -15,6 +15,9 @@
     "wrangler": "^3.57.0"
   },
   "dependencies": {
-    "hono": "^4.3.7"
+    "hono": "^4.3.7",
+    "resend": "^4.2.0",
+    "stripe": "^18.0.0",
+    "zod": "^3.24.2"
   }
 }
