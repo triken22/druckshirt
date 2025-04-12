@@ -3,14 +3,89 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DruckMeinShirt</title>
-    <!-- Add CSS links here -->
+    <title>DruckMeinShirt - Design & Order</title>
+    <link rel="stylesheet" href="./src/style.css" />
+    <!-- Load Stripe.js early -->
+    <script src="https://js.stripe.com/v3/" defer></script>
   </head>
   <body>
-    <h1>DruckMeinShirt - Coming Soon!</h1>
+    <header>
+      <h1>DruckMeinShirt</h1>
+      <nav>
+        <!-- TODO: Add navigation links -->
+      </nav>
+      <div id="token-balance-display">Tokens: Lade...</div>
+    </header>
 
-    <!-- Add main app container here -->
+    <main>
+      <section id="image-upload-section">
+        <h2>1. Bild Hochladen</h2>
+        <input type="file" id="image-upload-input" accept=".png, .jpg, .jpeg" />
+        <button id="image-upload-button">Bild Hochladen</button>
+        <div id="image-upload-result"></div>
+        <div id="upload-status"></div>
+      </section>
 
-    <script type="module" src="/src/main.js"></script>
+      <hr />
+
+      <section id="token-purchase-section">
+        <h2>Token Kaufen</h2>
+        <p>Kaufe Tokens, um AI-Bilder zu generieren.</p>
+        <!-- TODO: Add bundle selection later -->
+        <label for="email-input">Email:</label>
+        <input
+          type="email"
+          id="email-input"
+          placeholder="deine@email.com"
+          required
+        />
+        <button id="buy-tokens-button">10 Tokens für €5 Kaufen</button>
+        <!-- Example bundle -->
+        <div id="payment-element-container" style="margin-top: 1rem">
+          <!-- Stripe Payment Element will be inserted here -->
+        </div>
+        <button
+          id="submit-payment-button"
+          style="display: none; margin-top: 1rem"
+        >
+          Bezahlen
+        </button>
+        <div id="payment-message"></div>
+        <div
+          id="grant-id-display"
+          style="margin-top: 1rem; font-weight: bold"
+        ></div>
+      </section>
+
+      <hr />
+
+      <!-- Placeholder Sections for Future Phases -->
+      <section id="ai-generation-section" style="display: none">
+        <h2>AI Bild Generieren</h2>
+        <!-- TODO: Phase 2 - Implement AI Generation UI -->
+      </section>
+
+      <section id="design-section" style="display: none">
+        <h2>T-Shirt Design</h2>
+        <!-- TODO: Phase 2/3 - Implement Design UI -->
+      </section>
+
+      <section id="checkout-section" style="display: none">
+        <h2>Checkout</h2>
+        <!-- TODO: Phase 3 - Implement T-Shirt Checkout -->
+      </section>
+
+      <section id="recovery-section" style="display: none">
+        <h2>Grant ID Wiederherstellung</h2>
+        <!-- TODO: Phase 1/2 - Implement Recovery UI -->
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2024 DruckMeinShirt</p>
+      <!-- TODO: Add links to Impressum, Datenschutz -->
+    </footer>
+
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>

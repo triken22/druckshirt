@@ -1,0 +1,141 @@
+/* Basic Reset & Body Styles */
+body {
+  font-family: sans-serif;
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+  background-color: #f4f4f4;
+  color: #333;
+}
+
+header {
+  background: #333;
+  color: #fff;
+  padding: 1rem 0;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+header h1 {
+  margin: 0;
+}
+
+#token-balance-display {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: #555;
+  padding: 0.5rem;
+  border-radius: 5px;
+}
+
+main {
+  padding: 2rem;
+  max-width: 960px;
+  margin: 2rem auto;
+  background: #fff;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+section {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+hr {
+  border: 0;
+  height: 1px;
+  background: #eee;
+  margin: 2rem 0;
+}
+
+button {
+  display: inline-block;
+  background: #333;
+  color: #fff;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  cursor: pointer;
+  border-radius: 5px;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background: #555;
+}
+
+button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+input[type="file"],
+input[type="email"],
+input[type="text"] {
+  display: block;
+  width: 95%; /* Slightly less than 100% to prevent overflow issues */
+  max-width: 400px; /* Max width for larger screens */
+  padding: 0.8rem;
+  margin-bottom: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+
+#payment-element-container {
+  border: 1px solid #ccc;
+  padding: 1rem;
+  border-radius: 5px;
+  min-height: 100px; /* Give space for the element */
+}
+
+#image-upload-result img {
+  max-width: 200px;
+  max-height: 200px;
+  margin-top: 1rem;
+  border: 1px solid #ccc;
+}
+
+#upload-status,
+#payment-message {
+  margin-top: 1rem;
+  font-style: italic;
+}
+
+#grant-id-display code {
+  background-color: #eee;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+footer {
+  text-align: center;
+  margin-top: 2rem;
+  padding: 1rem;
+  background: #333;
+  color: #fff;
+}
+
+/* Basic Responsive Adjustments */
+@media (max-width: 768px) {
+  main {
+    padding: 1rem;
+    margin: 1rem;
+  }
+
+  input[type="file"],
+  input[type="email"],
+  input[type="text"] {
+    width: 90%;
+  }
+}
