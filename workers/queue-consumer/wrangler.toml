@@ -4,45 +4,62 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
 
-# Bindings
+# Bindings (Defaults/Local Dev)
 [[kv_namespaces]]
 binding = "STATE_KV"
-id = "<YOUR_KV_NAMESPACE_ID>" # Replace with your actual KV namespace ID (should match api-gateway's)
-# preview_id = "<YOUR_PREVIEW_KV_NAMESPACE_ID>" # Optional: for local dev/preview
+id = "b5d117a32d2a4d2c880cc5537acfdbc9" # Updated: Local ID (should match api-gateway's local)
 
 [[queues.consumers]]
-queue = "druckshirt-token-fulfillment"
+queue = "druckshirt-token-fulfillment" # Default/local queue name (consumed)
 # max_batch_size = 10 # Optional: Default is 100
 # max_batch_timeout = 5 # Optional: Default is 30 seconds
 # max_retries = 3 # Optional: Default is 3
 # dead_letter_queue = "druckshirt-dlq" # Optional: Define a DLQ
 
 [[queues.consumers]]
-queue = "druckshirt-order-fulfillment"
+queue = "druckshirt-order-fulfillment" # Default/local queue name (consumed)
 # max_retries = 5 # Example: Allow more retries for orders
 # dead_letter_queue = "druckshirt-dlq" # Optional: Define a DLQ
 
 # Environment: Staging
 [env.staging]
 name = "druckshirt-queue-consumer-staging"
-# [[env.staging.kv_namespaces]]
-# binding = "STATE_KV"
-# id = "<YOUR_STAGING_KV_ID>"
-# [[env.staging.queues.consumers]]
-# queue = "druckshirt-token-fulfillment-staging"
-# [[env.staging.queues.consumers]]
-# queue = "druckshirt-order-fulfillment-staging"
+
+# Define bindings explicitly for staging
+[[env.staging.kv_namespaces]]
+binding = "STATE_KV"
+id = "0cc66f93317c4798af20561bb8c4aa23" # Updated: Staging ID (should match api-gateway's staging)
+
+[[env.staging.queues.consumers]]
+queue = "druckshirt-token-fulfillment-staging" # Updated: Staging queue name
+# max_retries = 3
+# dead_letter_queue = "druckshirt-staging-dlq"
+
+[[env.staging.queues.consumers]]
+queue = "druckshirt-order-fulfillment-staging" # Updated: Staging queue name
+# max_retries = 5
+# dead_letter_queue = "druckshirt-staging-dlq"
 
 # Secrets for staging would be set via:
 # `wrangler secret put <SECRET_NAME> --env staging`
 
 # Environment: Production
-# [env.production]
-# name = "druckshirt-queue-consumer-production" # Optional
-# ... other production-specific bindings/configs ...
+[env.production]
+name = "druckshirt-queue-consumer-production"
 
-# Secrets are set via GitHub Actions during deploy
+kv_namespaces = [
+  { binding = "STATE_KV", id = "59d2638e44714737923ac9c12452209b" } # Verified Production ID (should match api-gateway's production)
+]
+
+[[env.production.queues.consumers]]
+queue = "token-fulfillment-queue-production" # Verified Production Queue
+# ... optional settings ...
+
+[[env.production.queues.consumers]]
+queue = "order-fulfillment-queue-production" # Verified Production Queue
+# ... optional settings ...
+
+# Secrets are set via GitHub Actions during deploy or manually via wrangler secret put
+# DO NOT add secrets directly to this file.
 # [vars]
-# STRIPE_SECRET_KEY = "placeholder"
-# PRINTFUL_API_KEY = "placeholder"
-# RESEND_API_KEY = "placeholder" 
+# Secrets like STRIPE_SECRET_KEY, PRINTFUL_API_KEY, RESEND_API_KEY are set via `wrangler secret put` 
