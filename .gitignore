@@ -134,3 +134,12 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Cloudflare
+.wrangler/
+
+# Local Environment Variables
+# Ignore local environment files (DO NOT COMMIT ACTUAL SECRETS)
+.dev.vars
+frontend/.env
+r2-cors.json

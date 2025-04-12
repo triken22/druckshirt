@@ -1,0 +1,62 @@
+# Top-level configuration
+name = "druckmeinshirt-api-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-05-15"
+compatibility_flags = [ "nodejs_compat" ]
+
+# Bindings
+kv_namespaces = [
+  { binding = "STATE_KV", id = "0cc66f93317c4798af20561bb8c4aa23", preview_id = "0cc66f93317c4798af20561bb8c4aa23" } # Using Staging ID for preview
+]
+
+r2_buckets = [
+  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-staging", preview_bucket_name = "druckmeinshirt-images-staging" }
+]
+
+[[queues.producers]]
+queue = "token-fulfillment-queue-staging"
+binding = "TOKEN_QUEUE"
+
+[[queues.producers]]
+queue = "order-fulfillment-queue-staging"
+binding = "ORDER_QUEUE"
+
+# Environment: Staging
+[env.staging]
+name = "druckmeinshirt-api-gateway-staging"
+kv_namespaces = [
+  { binding = "STATE_KV", id = "0cc66f93317c4798af20561bb8c4aa23" }
+]
+r2_buckets = [
+  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-staging" }
+]
+[[env.staging.queues.producers]]
+queue = "token-fulfillment-queue-staging"
+binding = "TOKEN_QUEUE"
+[[env.staging.queues.producers]]
+queue = "order-fulfillment-queue-staging"
+binding = "ORDER_QUEUE"
+
+# Environment: Production
+[env.production]
+name = "druckmeinshirt-api-gateway-production"
+kv_namespaces = [
+  { binding = "STATE_KV", id = "59d2638e44714737923ac9c12452209b" }
+]
+r2_buckets = [
+  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-production" }
+]
+[[env.production.queues.producers]]
+queue = "token-fulfillment-queue-production"
+binding = "TOKEN_QUEUE"
+[[env.production.queues.producers]]
+queue = "order-fulfillment-queue-production"
+binding = "ORDER_QUEUE"
+
+# Secrets are set via GitHub Actions during deploy
+# [vars]
+# STRIPE_SECRET_KEY = "placeholder"
+# STRIPE_WEBHOOK_SECRET = "placeholder"
+# PRINTFUL_API_KEY = "placeholder"
+# RESEND_API_KEY = "placeholder"
+# XAI_API_KEY = "placeholder" 
