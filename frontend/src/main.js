@@ -922,107 +922,18 @@ function getPlacementData() {
 }
 
 // --- Modified Phase 2 & 3 Logic ---
+// THIS SECTION CONTAINS DUPLICATES AND WILL BE REMOVED
+/*
 function handleProductSelection(event) {
-  const targetItem = event.target.closest(".product-item");
-  if (!targetItem || !targetItem.dataset.productId) return;
-
-  const productId = parseInt(targetItem.dataset.productId, 10);
-  selectedProduct = availableProducts.find((p) => p.id === productId);
-
-  if (selectedProduct) {
-    productListDiv
-      .querySelectorAll(".product-item")
-      .forEach((item) => item.classList.remove("selected"));
-    targetItem.classList.add("selected");
-
-    // --- Update Mockup Background ---
-    const mockupBg = document.getElementById("mockup-background");
-    if (mockupBg && selectedProduct.default_image_url) {
-      // Set background image to the product's default image
-      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
-      mockupBg.style.backgroundColor = "transparent"; // Clear bg color if image is set
-      console.log(
-        "Set mockup background to product default:",
-        selectedProduct.default_image_url
-      );
-    } else if (mockupBg) {
-      mockupBg.style.backgroundImage = "none"; // Clear image if none provided
-      mockupBg.style.backgroundColor = "#ccc"; // Fallback color
-      console.log("Cleared mockup background, using fallback color.");
-    }
-    // --- End Update Mockup Background ---
-
-    displayColorSwatches(selectedProduct);
-    sizeSelectorDiv.innerHTML = "<p>Wähle zuerst Farbe.</p>";
-    selectedVariant = null;
-    selectedSize = null;
-    displayMessage(
-      document.getElementById("design-status"),
-      `${selectedProduct.name} ausgewählt.`,
-      "info"
-    );
-    checkDesignCompletion();
-  } else {
-    console.error("Selected product not found in availableProducts");
-  }
+    // ... Duplicate logic ...
 }
 
 function handleColorSelection(event) {
-  const targetSwatch = event.target.closest(".color-swatch");
-  if (!targetSwatch || !targetSwatch.dataset.colorCode || !selectedProduct)
-    return;
-
-  const colorCode = targetSwatch.dataset.colorCode;
-  const colorName = targetSwatch.dataset.colorName;
-
-  colorSwatchesDiv
-    .querySelectorAll(".color-swatch")
-    .forEach((swatch) => swatch.classList.remove("selected"));
-  targetSwatch.classList.add("selected");
-
-  selectedVariant = { color: colorName, color_code: colorCode };
-
-  // --- Update Mockup Background ---
-  const mockupBg = document.getElementById("mockup-background");
-  if (mockupBg) {
-    // Try to find a variant-specific image URL provided by the backend
-    const matchingVariant = selectedProduct.variants?.find(
-      (v) => v.color === colorName
-    );
-    // Check if the variant object has an 'image' property (or similar)
-    const variantImageUrl =
-      matchingVariant?.image_url || matchingVariant?.image; // Adjust property name if needed
-
-    if (variantImageUrl) {
-      mockupBg.style.backgroundImage = `url('${variantImageUrl}')`;
-      mockupBg.style.backgroundColor = "transparent";
-      console.log("Set mockup background to variant image:", variantImageUrl);
-    } else if (selectedProduct.default_image_url) {
-      // Fallback to product default image if no specific variant image found
-      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
-      mockupBg.style.backgroundColor = "transparent";
-      console.log(
-        "Set mockup background to product default (variant fallback):",
-        selectedProduct.default_image_url
-      );
-    } else {
-      // Final fallback: use selected color code as background
-      mockupBg.style.backgroundImage = "none";
-      mockupBg.style.backgroundColor = colorCode;
-      console.log("Set mockup background color:", colorCode);
-    }
-  }
-  // --- End Update Mockup Background ---
-
-  displaySizeSelector(selectedProduct, colorName);
-  selectedSize = null;
-  displayMessage(
-    document.getElementById("design-status"),
-    `Farbe ${colorName} ausgewählt.`,
-    "info"
-  );
-  checkDesignCompletion();
+    // ... Duplicate logic ...
 }
+*/
+// --- REMOVED DUPLICATE FUNCTION DEFINITIONS (Lines ~925 onwards) ---
+// The correct versions exist earlier in the file (around lines 738 and 777).
 
 // --- Phase 3 Core Logic ---
 
