@@ -28,9 +28,8 @@ name = "druckshirt-api-gateway-staging"
 # Define vars explicitly for staging
 [env.staging.vars]
 # Add localhost AND your staging frontend URL, comma-separated
-ALLOWED_ORIGINS = "http://localhost:3000,https://druckshirt-frontend.pages.dev",
-" # Replace <...>
-R2_PUBLIC_URL_PREFIX = "https://fdef5e2aa7e29e39b787156d6d92f902.r2.cloudflarestorage.com/druckmeinshirt-images-staging" # Replace this
+ALLOWED_ORIGINS = "http://localhost:3000,https://druckshirt-frontend.pages.dev" # Removed trailing comma
+R2_PUBLIC_URL_PREFIX = "<YOUR_STAGING_R2_PUBLIC_URL_HERE>" # Replace this
 
 # Define bindings explicitly for staging (use specific staging resources)
 [[env.staging.kv_namespaces]]
