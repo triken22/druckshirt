@@ -6,6 +6,7 @@ import Stripe from "stripe";
 import { z } from "zod";
 import { Resend } from "resend";
 import type { ExecutionContext as HonoExecutionContext } from "hono";
+import * as Sentry from "@sentry/cloudflare";
 
 /**
  * Defines the expected bindings and secrets available to the API Gateway worker.
@@ -98,6 +99,9 @@ export interface Env {
    * @secret POSTHOG_HOST_URL
    */
   POSTHOG_HOST_URL?: string;
+
+  // Common convention for Cloudflare environment (staging/production)
+  CF_WORKER_ENV?: string;
 }
 
 // Define types for Hono context variables set by middleware
@@ -224,7 +228,9 @@ const PrintfulShippingRequestSchema = z.object({
     .min(1),
 });
 
-// === CORS Middleware ===
+// === Middleware ===
+
+// CORS Middleware
 // Adjust origins as needed for staging/production
 app.use("/api/*", async (c, next) => {
   // Calculate allowedOrigins outside the origin function
@@ -1136,28 +1142,12 @@ app.get("/api/get-token-balance", async (c) => {
 app.post(
   "/api/recover-grant-id",
   async (c: Context<{ Bindings: Env; Variables: Variables }>) => {
-    // Generic success message to return in most cases
-    const genericSuccessResponse = () =>
-      c.json({
+    if (!c.env.RESEND_API_KEY) {
+      console.error("RESEND_API_KEY missing for grant recovery.");
+      return c.json({
         message:
           "If a matching purchase was found, recovery instructions have been sent to your email.",
       });
-
-    // Check essential configuration first
-    if (!c.env.STRIPE_SECRET_KEY || !c.env.RESEND_API_KEY) {
-      console.error(
-        "STRIPE_SECRET_KEY or RESEND_API_KEY missing for grant recovery."
-      );
-      // Still return generic message, but log critical error
-      return genericSuccessResponse();
-    }
-
-    const stripe = c.var.stripe; // Assumes Stripe middleware ran
-    if (!stripe) {
-      console.error(
-        "Stripe client not initialized in context for grant recovery."
-      );
-      return genericSuccessResponse();
     }
 
     try {
@@ -1166,149 +1156,106 @@ app.post(
 
       if (!validation.success) {
         console.warn("Invalid email format received for grant recovery.");
-        return genericSuccessResponse(); // Return generic message even for invalid input
-      }
-
-      const { email } = validation.data;
-
-      // 1. Find Stripe Customer ID by email
-      let customer: Stripe.Customer | null = null;
-      try {
-        const customerSearch = await stripe.customers.list({
-          email: email,
-          limit: 1,
+        // Don't reveal specific validation errors
+        return c.json({
+          message:
+            "If a matching purchase was found, recovery instructions have been sent to your email.",
         });
-        customer = customerSearch.data[0] || null;
-      } catch (stripeError: any) {
-        console.error(
-          `Stripe API error searching for customer ${email}:`,
-          stripeError
-        );
-        return genericSuccessResponse(); // Don't expose Stripe errors
       }
 
-      if (!customer) {
-        console.log(
-          `No Stripe customer found for email during grant recovery: ${email}`
-        );
-        return genericSuccessResponse();
-      }
+      const email = validation.data.email; // Define email here, outside the inner try
 
-      // 2. List successful 'token' PaymentIntents for the customer
-      let successfulGrantIds: string[] = [];
+      // Put the rest of the logic inside a separate try-catch for better error scoping
       try {
-        const paymentIntents = await stripe.paymentIntents.list({
-          customer: customer.id,
-          limit: 50, // Limit results to avoid excessive lists
-        });
-
-        successfulGrantIds = paymentIntents.data
-          .filter(
-            (pi) =>
-              pi.status === "succeeded" &&
-              pi.metadata?.purchase_type === "tokens" &&
-              pi.metadata?.grant_id &&
-              // Basic UUID check (simple regex)
-              /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-                pi.metadata.grant_id
-              )
-          )
-          .map((pi) => pi.metadata.grant_id as string)
-          // Get unique IDs
-          .filter((value, index, self) => self.indexOf(value) === index);
-      } catch (stripeError: any) {
-        console.error(
-          `Stripe API error listing payment intents for customer ${customer.id}:`,
-          stripeError
-        );
-        return genericSuccessResponse(); // Don't expose Stripe errors
-      }
-
-      // 3. If Grant IDs found, send recovery email
-      if (successfulGrantIds.length > 0) {
-        console.log(
-          `Found ${successfulGrantIds.length} potential grant IDs for email ${email}. Attempting recovery email.`
-        );
-        try {
-          const resend = new Resend(c.env.RESEND_API_KEY);
-          const idListHtml = successfulGrantIds
-            .map((id) => `<li><code>${id}</code></li>`)
-            .join("");
-
-          await resend.emails.send({
-            from: "DruckMeinShirt Recovery <noreply@yourdomain.com>", // REPLACE
-            to: [email],
-            subject: "Your DruckMeinShirt Grant ID Recovery",
-            html: `<h2>DruckMeinShirt Access Grant ID Recovery</h2>
-                           <p>You requested recovery for the Grant ID(s) associated with this email address.</p>
-                           <p>The following Grant ID(s) were found for recent token purchases:</p>
-                           <ul>${idListHtml}</ul>
-                           <p><strong>Keep these IDs safe!</strong> You need them to access your purchased image generation tokens, especially if you clear browser data or use a different device.</p>
-                           <p>If you did not request this recovery, you can safely ignore this email.</p>`,
-          });
-          console.log(`Successfully sent grant ID recovery email to ${email}`);
-
-          // --- Send PostHog Event ---
-          // Use a hashed email or the stripe customer ID as distinctId for privacy
-          sendPostHogEvent(
-            c.env,
-            c.executionCtx,
-            customer.id,
-            "grant_id_recovered",
-            {
-              num_ids_found: successfulGrantIds.length,
-              // email_used_hashed: await hashEmail(email) // Implement hashing if needed
-            }
-          );
-          // --- End PostHog Event ---
-        } catch (resendError: any) {
-          console.error(
-            `Failed to send grant ID recovery email to ${email}:`,
-            resendError
-          );
-          // Log the error, but still return generic success to user
+        if (!c.env.STRIPE_SECRET_KEY) {
+          console.error("STRIPE_SECRET_KEY missing for grant recovery.");
+          return c.json({ message: "Configuration error." }, 500); // Return generic success later
         }
-      } else {
-        console.log(
-          `No valid, successful token purchase grant IDs found for email ${email}`
-        );
-      }
 
-      // Always return the generic success message
-      return genericSuccessResponse();
-    } catch (error: any) {
-      console.error("Unexpected error in /api/recover-grant-id:", error);
-      // Log unexpected errors, but still return generic success to the user
-      return genericSuccessResponse();
+        const stripeClient = new Stripe(c.env.STRIPE_SECRET_KEY, {
+          httpClient: Stripe.createFetchHttpClient(),
+        });
+
+        console.log(`Searching Stripe for token purchases by ${email}`);
+        const paymentIntents = await stripeClient.paymentIntents.list({
+          limit: 20,
+        });
+        const successfulTokenPurchases = paymentIntents.data.filter(
+          (pi) =>
+            pi.status === "succeeded" &&
+            pi.metadata.purchase_type === "tokens" &&
+            pi.metadata.grant_id && // Ensure grant_id exists
+            (pi.customer === null || pi.receipt_email === email) // Check receipt email or customer email
+        );
+        const foundGrantIds = successfulTokenPurchases.map(
+          (pi) => pi.metadata.grant_id
+        );
+
+        if (foundGrantIds.length === 0) {
+          console.log(`No successful token purchases found for ${email}`);
+          return c.json({
+            message: "Recovery instructions sent if match found.",
+          });
+        }
+
+        const uniqueGrantIds = [...new Set(foundGrantIds)];
+        console.log(`Found grant IDs for ${email}:`, uniqueGrantIds);
+
+        // Send email
+        const resend = new Resend(c.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: "DruckMeinShirt Recovery <noreply@yourdomain.com>", // REPLACE
+          to: [email],
+          subject: "Your DruckMeinShirt Grant ID Recovery",
+          html: `<p>You requested recovery for your DruckMeinShirt Grant IDs.</p>
+                         <p>We found the following Grant ID(s) associated with recent successful token purchases for this email address:</p>
+                         <ul>
+                            ${uniqueGrantIds
+                              .map((id) => `<li><code>${id}</code></li>`)
+                              .join("\n")}
+                         </ul>
+                         <p>Please keep these IDs safe.</p>`, // TODO: Improve email template
+        });
+
+        console.log(`Sent recovery email to ${email}`);
+        return c.json({
+          message: "Recovery instructions sent if match found.",
+        });
+      } catch (innerError: any) {
+        // Log the inner error with the email context
+        console.error(
+          `Error during grant ID recovery process for ${email}:`,
+          innerError
+        );
+        // Return the generic success message to the user regardless of inner failure
+        return c.json({
+          message:
+            "If a matching purchase was found, recovery instructions have been sent to your email.",
+        });
+      }
+    } catch (outerError: any) {
+      // Catch errors reading/parsing the request body itself
+      console.error(
+        `Error parsing request body for grant recovery:`,
+        outerError
+      );
+      // Return a generic error or the standard success message if preferred
+      return c.json({ error: "Bad request format" }, 400);
     }
   }
 );
 
-// --- Standard Worker Export ---
-// Reverted to standard Hono export instead of Sentry wrapper
+// --- Error Handling ---
+app.onError((err, c) => {
+  // Keep console logging
+  console.error("Hono Global Error Handler:", err);
+  return c.json({ error: "Internal Server Error" }, 500);
+});
+
+// --- Simple Worker Export (No Sentry Wrapper) ---
 export default {
   fetch: app.fetch, // Use Hono's fetch handler directly
 };
-
-/* // Commented out Sentry Wrapper
-// --- Worker Definition with Sentry Wrapper ---
-export default Sentry.withSentry(
-  // Configuration function providing Sentry options
-  (env: Env) => ({
-    dsn: env.SENTRY_DSN || "https://322f656b562c1314cb84340737078c1e@o4509142658908160.ingest.de.sentry.io/4509142662316112", // Use env var or fallback
-    tracesSampleRate: 1.0, // Example: Adjust as needed
-    // ... other Sentry config options ...
-  }),
-  // Define ExportedHandler inline using satisfies
-  {
-    async fetch(request, env, ctx) { // Removed type annotations to try and fix type error
-      // Hono app handles the request
-      return app.fetch(request, env, ctx);
-    },
-    // Add other handlers like 'queue' if this worker needed them
-  } satisfies ExportedHandler<Env>
-);
-*/
 
 // --- Printful API Client Helper (for API Gateway) ---
 

@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { Resend } from "resend";
+import * as Sentry from "@sentry/cloudflare";
 
 // Define types for bindings and secrets
 export interface Env {
@@ -14,6 +15,7 @@ export interface Env {
   // PostHog Secrets
   POSTHOG_API_KEY?: string;
   POSTHOG_HOST_URL?: string;
+  CF_WORKER_ENV?: string;
 }
 
 // Define the expected message body structure for each queue
@@ -147,121 +149,87 @@ async function sendPostHogEvent(
   );
 }
 
-export default {
-  async queue(
-    batch: MessageBatch<TokenFulfillmentMessage | OrderFulfillmentMessage>,
-    env: Env,
-    ctx: ExecutionContext
-  ): Promise<void> {
-    for (const message of batch.messages) {
-      const messageId = message.id;
-      const queueName = batch.queue;
-      console.log(`Received message ${messageId} on queue ${queueName}`);
+// Define the core queue logic as a separate object
+const queueHandler: ExportedHandlerQueueHandler<Env> = async (
+  batch,
+  env,
+  ctx
+) => {
+  for (const message of batch.messages) {
+    const messageId = message.id;
+    const queueName = batch.queue;
+    console.log(`Received message ${messageId} on queue ${queueName}`);
 
-      // --- Remove Toucan/Sentry Initialization ---
-      /*
-      let sentry: Toucan | undefined; // <-- Remove Toucan type
-      if (env.SENTRY_DSN) {
-        try {
-          sentry = new Toucan({ // <-- Remove Toucan instantiation
-            dsn: env.SENTRY_DSN,
-            context: ctx,
-            initialScope: {
-              tags: {
-                worker: "queue-consumer",
-                queueName: queueName,
-              },
-              extra: {
-                messageId: messageId,
-                messageAttempts: message.attempts,
-              },
-            },
-          });
-        } catch (e) {
-          console.error(
-            "Failed to initialize Toucan/Sentry in queue handler",
-            e
-          );
-        }
+    try {
+      let success = false;
+      if (queueName.startsWith("token-fulfillment")) {
+        success = await handleTokenFulfillment(
+          message as Message<TokenFulfillmentMessage>,
+          env,
+          ctx
+        );
+      } else if (queueName.startsWith("order-fulfillment")) {
+        success = await handleOrderFulfillment(
+          message as Message<OrderFulfillmentMessage>,
+          env,
+          ctx
+        );
+      } else {
+        console.error(`Unknown queue: ${queueName}`);
+        message.ack();
+        continue;
       }
-      */
-      const sentry: any = undefined; // Placeholder if needed, replace usage below
-      // --- End Remove Toucan/Sentry ---
 
-      try {
-        let success = false;
-        if (queueName.startsWith("token-fulfillment")) {
-          success = await handleTokenFulfillment(
-            message as Message<TokenFulfillmentMessage>,
-            env,
-            ctx
-            // sentry // <-- Pass placeholder or remove
-          );
-        } else if (queueName.startsWith("order-fulfillment")) {
-          success = await handleOrderFulfillment(
-            message as Message<OrderFulfillmentMessage>,
-            env,
-            ctx
-            // sentry // <-- Pass placeholder or remove
-          );
-        } else {
-          console.error(`Unknown queue: ${queueName}`);
-          // sentry?.captureMessage( // <-- Remove Sentry usage
-          //   `Processed message from unknown queue: ${queueName}`,
-          //   "warning"
-          // );
-          message.ack();
-          continue;
-        }
+      if (success) {
+        message.ack();
+        console.log(
+          `Successfully processed and acknowledged message: ${messageId}`
+        );
+      } else {
+        throw new Error(
+          `Handler function reported failure for message ${messageId}`
+        );
+      }
+    } catch (error: any) {
+      console.error(
+        `Error processing message ${messageId} (captured by Sentry):`,
+        error
+      );
 
-        if (success) {
-          message.ack();
-          console.log(
-            `Successfully processed and acknowledged message: ${messageId}`
-          );
-        } else {
-          // Explicit failure from handler, retry if possible
-          throw new Error(
-            `Handler function reported failure for message ${messageId}`
-          );
-        }
-      } catch (error: any) {
-        console.error(`Error processing message ${messageId}:`, error);
-
-        // --- Remove Sentry Usage ---
-        /*
-        if (sentry) {
-          sentry.setExtra("finalProcessingError", error.message);
-          sentry.captureException(error);
-          console.log(`Reported error for message ${messageId} to Sentry.`);
-        } else {
-          console.log("Sentry not initialized, skipping report.");
-        }
-        */
-        // --- End Remove Sentry Usage ---
-
-        // Retry logic based on attempts
-        if (message.attempts < 3) {
-          // Check against max_retries (defined in wrangler.toml)
-          console.log(
-            `Retrying message ${messageId}, attempt ${message.attempts + 1}`
-          );
-          // Exponential backoff delay
-          const delaySeconds = Math.pow(2, message.attempts) * 5;
-          message.retry({ delaySeconds: delaySeconds });
-        } else {
-          console.error(
-            `Message ${messageId} failed after ${message.attempts} attempts.`
-          );
-          // TODO: Send to Dead Letter Queue if configured in wrangler.toml
-          // For now, just acknowledge to remove it from the queue and prevent infinite loops
-          message.ack();
-          // TODO: Trigger alert for manual investigation
-        }
+      if (message.attempts < 3) {
+        console.log(
+          `Retrying message ${messageId}, attempt ${message.attempts + 1}`
+        );
+        const delaySeconds = Math.pow(2, message.attempts) * 5;
+        message.retry({ delaySeconds: delaySeconds });
+      } else {
+        console.error(
+          `Message ${messageId} failed after ${message.attempts} attempts.`
+        );
+        message.ack();
       }
     }
-  },
+  }
 };
+
+// --- Worker Export with Sentry ---
+export default Sentry.withSentry(
+  (env: Env) => ({
+    dsn: env.SENTRY_DSN,
+    tracesSampleRate: 0.1,
+    environment: env.CF_WORKER_ENV || "unknown",
+    beforeSend(event, hint) {
+      console.log(
+        "Sentry queue event prepared, hint:",
+        hint?.originalException
+      );
+      return event;
+    },
+  }),
+  {
+    queue: queueHandler,
+  } satisfies ExportedHandler<Env>
+);
 
 /**
  * Handles granting tokens after a successful purchase.
@@ -271,7 +239,6 @@ async function handleTokenFulfillment(
   message: Message<TokenFulfillmentMessage>,
   env: Env,
   ctx: ExecutionContext
-  // sentry?: Toucan // <-- Remove Toucan type
 ): Promise<boolean> {
   const { grant_id, bundle_id, email, stripe_customer_id } = message.body;
   console.log(`Processing token fulfillment for grant_id: ${grant_id}`);
@@ -281,15 +248,10 @@ async function handleTokenFulfillment(
     console.error(
       `Invalid bundle_id '${bundle_id}' for grant_id ${grant_id}. Cannot process.`
     );
-    return true; // Acknowledge - unretryable error
+    return true;
   }
 
-  // sentry?.setTag("handler", "handleTokenFulfillment");
-  // sentry?.setExtra("grant_id", grant_id);
-
   try {
-    // --- Update KV ---
-    // Get existing data if any
     const existingData = await env.STATE_KV.get<TokenData>(grant_id, {
       type: "json",
     });
@@ -297,10 +259,10 @@ async function handleTokenFulfillment(
     const newTotalTokens = currentTokens + tokensToAdd;
 
     const newData: TokenData = {
-      ...(existingData || {}), // Preserve any other existing data
+      ...(existingData || {}),
       tokens_remaining: newTotalTokens,
-      email: email, // Update email just in case
-      stripe_customer_id: stripe_customer_id, // Update customer ID
+      email: email,
+      stripe_customer_id: stripe_customer_id,
       last_updated: new Date().toISOString(),
       last_bundle_purchased: bundle_id,
     };
@@ -310,33 +272,26 @@ async function handleTokenFulfillment(
       `KV updated for grant_id ${grant_id}: ${newTotalTokens} tokens remaining.`
     );
 
-    // --- Send PostHog Event ---
     sendPostHogEvent(env, ctx, grant_id, "token_purchase_completed", {
       bundle_id: bundle_id,
-      email: email, // Consider hashing?
+      email: email,
       stripe_customer_id: stripe_customer_id,
       tokens_added: tokensToAdd,
       new_token_balance: newData.tokens_remaining,
     });
-    // --- End PostHog Event ---
 
-    // --- Send Confirmation Email ---
     if (!env.RESEND_API_KEY) {
       console.error(
         `RESEND_API_KEY not set. Cannot send confirmation email for grant_id ${grant_id}.`
       );
-      // sentry?.captureMessage( // <-- Remove Sentry usage
-      //   "RESEND_API_KEY missing during token fulfillment",
-      //   "error"
-      // );
-      return true; // Acknowledge - unretryable config error, but KV updated
+      return true;
     }
 
     const resend = new Resend(env.RESEND_API_KEY);
 
     try {
       await resend.emails.send({
-        from: "DruckMeinShirt <noreply@yourdomain.com>", // REPLACE with your verified Resend domain
+        from: "DruckMeinShirt <noreply@yourdomain.com>",
         to: [email],
         subject: "Your DruckMeinShirt Token Purchase Confirmation",
         html: `<h2>Thank you for your purchase!</h2>
@@ -346,8 +301,6 @@ async function handleTokenFulfillment(
                <p><strong>Important:</strong> Your access Grant ID is: <code>${grant_id}</code></p>
                <p>Keep this ID safe! You'll need it if you clear your browser data or use a different device. You can use the recovery option on the website if you lose it.</p>
                <p>Happy designing!</p>`,
-        // Add tags for tracking if needed
-        // tags: [{ name: 'purchase_type', value: 'tokens' }, { name: 'bundle_id', value: bundle_id }]
       });
       console.log(
         `Confirmation email sent to ${email} for grant_id ${grant_id}.`
@@ -357,19 +310,16 @@ async function handleTokenFulfillment(
         `Failed to send confirmation email for grant_id ${grant_id}:`,
         emailError
       );
-      // sentry?.captureException(emailError, { /* ... */ }); // <-- Remove Sentry usage
-      // Decide if email failure should cause retry. Usually not, as tokens were granted.
-      // Log critically and monitor.
-      return true; // Acknowledge despite email failure
+      return true;
     }
 
-    return true; // Success
+    return true;
   } catch (kvError) {
     console.error(
       `KV storage error during token fulfillment for grant_id ${grant_id}:`,
       kvError
     );
-    return false; // Explicit failure - trigger retry
+    return false;
   }
 }
 
@@ -386,7 +336,6 @@ async function handleTokenFulfillment(
  * @param {Message<OrderFulfillmentMessage>} message - The queue message containing payment_intent_id and email.
  * @param {Env} env - The worker environment object with bindings and secrets.
  * @param {ExecutionContext} ctx - The execution context for waitUntil operations (PostHog).
- * @param {Toucan} [sentry] - Optional initialized Sentry/Toucan instance for error reporting.
  * @returns {Promise<boolean>} Returns `true` if the message should be acknowledged (success or unretryable error),
  *                             or `false` if the message should be retried (retryable error).
  */
@@ -394,7 +343,6 @@ async function handleOrderFulfillment(
   message: Message<OrderFulfillmentMessage>,
   env: Env,
   ctx: ExecutionContext
-  // sentry?: Toucan // <-- Remove Toucan type
 ): Promise<boolean> {
   const { payment_intent_id, email } = message.body;
   const kvOrderKey = `order:${payment_intent_id}`;
@@ -402,60 +350,51 @@ async function handleOrderFulfillment(
     `Processing order fulfillment for PaymentIntent: ${payment_intent_id}`
   );
 
-  // Add context for Sentry reporting
-  // sentry?.setTag("handler", "handleOrderFulfillment");
-  // sentry?.setExtra("payment_intent_id", payment_intent_id);
-
-  // --- Pre-checks ---
   if (!env.PRINTFUL_API_KEY || !env.STATE_KV) {
     const errorMsg =
       "Missing PRINTFUL_API_KEY or STATE_KV binding. Cannot process order fulfillment.";
     console.error(errorMsg);
-    // sentry?.captureMessage(errorMsg, "fatal"); // <-- Remove Sentry usage
+    sendPostHogEvent(env, ctx, email, "printful_order_failed", {
+      reason: "Missing PRINTFUL_API_KEY or STATE_KV binding",
+      payment_intent_id: payment_intent_id,
+    });
     return true;
   }
 
-  // --- Retrieve Order Details ---
   let orderDetails: TShirtOrderDetails | null = null;
   try {
     orderDetails = await env.STATE_KV.get<TShirtOrderDetails>(kvOrderKey, {
       type: "json",
     });
     if (!orderDetails) {
-      // Order details missing - maybe TTL expired or never stored properly.
-      // This is unrecoverable for this message.
-      const errorMsg = `Order details not found in KV for key: ${kvOrderKey}. Maybe expired or never stored?`;
-      console.error(errorMsg);
-      // sentry?.captureMessage(errorMsg, "error"); // <-- Remove Sentry usage
+      console.error(
+        `Order details not found in KV for key: ${kvOrderKey}. Maybe expired or never stored?`
+      );
       sendPostHogEvent(env, ctx, email, "printful_order_failed", {
         reason: "Order details not found in KV",
         payment_intent_id: payment_intent_id,
       });
-      return true; // Acknowledge message.
+      return true;
     }
     console.log(`Retrieved order details from KV for PI: ${payment_intent_id}`);
   } catch (kvError: any) {
-    // If KV read fails, it might be transient. Request retry.
     console.error(
       `KV error retrieving order details for key ${kvOrderKey}:`,
       kvError
     );
-    // Note: Sentry will report this via the main catch block if false is returned.
-    return false; // Request retry.
+    return false;
   }
 
-  // --- Process Order with Printful ---
   let printfulOrderId: number | null = null;
   let printfulApiFailed = false;
   let failureReason = "Unknown Printful API failure";
   let isRetryableFailure = false;
 
   try {
-    // Step 1: Create Draft Order in Printful
     console.log("Creating Printful draft order...");
     const createOrderPayload = {
       recipient: orderDetails.shipping_address,
-      external_id: payment_intent_id, // Link to our payment intent
+      external_id: payment_intent_id,
     };
     const createResponse = await printfulRequest(
       env.PRINTFUL_API_KEY,
@@ -468,10 +407,9 @@ async function handleOrderFulfillment(
       const errorBody = await createResponse.text();
       failureReason = `Printful Create Order API Error: ${createResponse.status}`;
       console.error(failureReason, errorBody);
-      // sentry?.captureException(new Error(failureReason), { /* ... */ }); // <-- Remove Sentry usage
       printfulApiFailed = true;
       isRetryableFailure = createResponse.status >= 500;
-      return !isRetryableFailure; // Ack if 4xx, retry if 5xx
+      return !isRetryableFailure;
     }
     const createResult = (await createResponse.json()) as { id: number };
     printfulOrderId = createResult.id;
@@ -479,7 +417,6 @@ async function handleOrderFulfillment(
       `Created Printful draft order ${printfulOrderId} for PI ${payment_intent_id}`
     );
 
-    // Step 2: Add Items to Printful Order
     console.log("Adding items to Printful order...");
     for (const item of orderDetails.items) {
       const addItemPayload = {
@@ -488,7 +425,7 @@ async function handleOrderFulfillment(
         quantity: item.quantity,
         placements: [
           {
-            placement: "front", // Assuming front placement based on mockup reqs
+            placement: "front",
             files: [{ url: item.design_url }],
           },
         ],
@@ -504,18 +441,14 @@ async function handleOrderFulfillment(
         failureReason = `Printful Add Item API Error: ${itemResponse.status} for variant ${item.catalog_variant_id}`;
         console.error(failureReason, errorBody);
         const itemError = new Error(failureReason);
-        // sentry?.captureException(itemError, { /* ... */ }); // <-- Remove Sentry usage
         printfulApiFailed = true;
-        // Treat item addition failure as unretryable for the whole order for simplicity
-        // Could potentially try to remove order draft, but complex.
-        throw itemError; // Throw to exit and trigger finally block + ack
+        throw itemError;
       }
       console.log(
         `Added item ${item.catalog_variant_id} (qty ${item.quantity}) to Printful order ${printfulOrderId}`
       );
     }
 
-    // Step 3: Confirm Printful Order
     console.log("Confirming Printful order...");
     const confirmResponse = await printfulRequest(
       env.PRINTFUL_API_KEY,
@@ -526,32 +459,28 @@ async function handleOrderFulfillment(
       const errorBody = await confirmResponse.text();
       failureReason = `Printful Confirm Order API Error: ${confirmResponse.status}`;
       console.error(failureReason, errorBody);
-      // sentry?.captureException(new Error(failureReason), { /* ... */ }); // <-- Remove Sentry usage
       printfulApiFailed = true;
       isRetryableFailure = confirmResponse.status >= 500;
-      return !isRetryableFailure; // Ack if 4xx, retry if 5xx
+      return !isRetryableFailure;
     }
     console.log(`Confirmed Printful order ${printfulOrderId}`);
 
-    // --- Order Successfully Submitted ---
     console.log(`Printful order ${printfulOrderId} submission successful.`);
 
-    // Send PostHog event for successful order completion
     sendPostHogEvent(env, ctx, email, "tshirt_order_completed", {
       payment_intent_id: payment_intent_id,
       printful_order_id: printfulOrderId,
-      email: email, // Consider hashing
+      email: email,
       shipping_country: orderDetails.shipping_address.country_code,
       total_amount_eur: (orderDetails.total_amount_cents / 100).toFixed(2),
     });
 
-    // Send confirmation email via Resend
     if (env.RESEND_API_KEY) {
       try {
         console.log("Sending order confirmation email...");
         const resend = new Resend(env.RESEND_API_KEY);
         await resend.emails.send({
-          from: "DruckMeinShirt <noreply@yourdomain.com>", // REPLACE with your verified Resend domain
+          from: "DruckMeinShirt <noreply@yourdomain.com>",
           to: [email],
           subject: "Your DruckMeinShirt Order Confirmation",
           html: `<h2>Thank you for your order!</h2>
@@ -559,59 +488,44 @@ async function handleOrderFulfillment(
                  <p>Printful Order ID: ${printfulOrderId}</p>
                  <p>We'll notify you again once it ships (if Printful webhooks are configured).</p>
                  <p>Thank you for shopping with DruckMeinShirt!</p>`,
-          // Add tags for tracking if needed
-          // tags: [{ name: 'purchase_type', value: 'tshirt' }]
         });
         console.log(
           `Order confirmation email sent to ${email} for Printful order ${printfulOrderId}`
         );
       } catch (emailError: any) {
-        // Log email error and report to Sentry, but don't fail the overall process
         console.error(
           `Failed to send order confirmation email for PI ${payment_intent_id}, Printful Order ${printfulOrderId}:`,
           emailError
         );
-        // sentry?.captureException(emailError, { /* ... */ }); // <-- Remove Sentry usage
       }
     } else {
       console.warn(
         "RESEND_API_KEY not set. Skipping order confirmation email."
       );
-      // sentry?.captureMessage( // <-- Remove Sentry usage
-      //   "RESEND_API_KEY missing during order confirmation",
-      //   "warning"
-      // );
     }
 
-    // Delete temporary order details from KV *after* successful submission & notifications
     try {
       console.log(`Deleting KV data for key: ${kvOrderKey}`);
       await env.STATE_KV.delete(kvOrderKey);
       console.log(`Deleted order details from KV for key: ${kvOrderKey}`);
     } catch (kvDeleteError: any) {
-      // Log KV delete error and report to Sentry, but the order succeeded, so ack message.
       console.error(
         `KV delete error for key ${kvOrderKey} after successful order ${printfulOrderId}:`,
         kvDeleteError
       );
-      // sentry?.captureException(kvDeleteError, { /* ... */ }); // <-- Remove Sentry usage
     }
 
-    return true; // Order processing successful, acknowledge message.
+    return true;
   } catch (error: any) {
-    // Catch errors primarily from the Add Item loop or unexpected issues
     console.error(
       `Error during Printful order processing for PI ${payment_intent_id} (Current Printful ID: ${printfulOrderId ?? "N/A"}):`,
       error
     );
-    // Ensure failure flags are set if not already
     printfulApiFailed = true;
     failureReason = error.message || "Error processing Printful items";
-    isRetryableFailure = false; // Assume errors caught here are not retryable
-    // Note: Sentry will report this via the main catch block.
-    return true; // Acknowledge message to prevent loops.
+    isRetryableFailure = false;
+    return true;
   } finally {
-    // If any step failed in a way determined to be unretryable, send PostHog failure event.
     if (printfulApiFailed && !isRetryableFailure) {
       console.log(
         "Sending PostHog failure event for unretryable Printful error."
