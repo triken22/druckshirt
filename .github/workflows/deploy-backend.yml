@@ -53,12 +53,11 @@ jobs:
           POSTHOG_HOST_URL: ${{ secrets.POSTHOG_HOST_URL }}
 
       - name: Upload API Gateway Source Maps to Sentry
-        # Run only if deploy step succeeded and auth token is available
         if: steps.deploy_api_gateway.outcome == 'success' && env.CLOUDFLARE_ENV != 'local' && env.SENTRY_AUTH_TOKEN != ''
         working-directory: ./workers/api-gateway
         run: |
           npm install --no-save @sentry/cli@latest
-          export SENTRY_ORG=YOUR_SENTRY_ORG_SLUG # <-- REPLACE
+          export SENTRY_ORG=high-five-financial-education
           export SENTRY_PROJECT=YOUR_API_GATEWAY_PROJECT_SLUG # <-- REPLACE
           export SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           export SENTRY_RELEASE=$(sentry-cli releases propose-version)
@@ -89,12 +88,11 @@ jobs:
           POSTHOG_HOST_URL: ${{ secrets.POSTHOG_HOST_URL }}
 
       - name: Upload Queue Consumer Source Maps to Sentry
-        # Run only if deploy step succeeded and auth token is available
         if: steps.deploy_queue_consumer.outcome == 'success' && env.CLOUDFLARE_ENV != 'local' && env.SENTRY_AUTH_TOKEN != ''
         working-directory: ./workers/queue-consumer
         run: |
           npm install --no-save @sentry/cli@latest
-          export SENTRY_ORG=YOUR_SENTRY_ORG_SLUG # <-- REPLACE
+          export SENTRY_ORG=high-five-financial-education
           export SENTRY_PROJECT=YOUR_QUEUE_CONSUMER_PROJECT_SLUG # <-- REPLACE
           export SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           export SENTRY_RELEASE=$(sentry-cli releases propose-version)
@@ -105,7 +103,6 @@ jobs:
           SENTRY_LOG_LEVEL: debug
 
       - name: Finalize Sentry Release
-        # Run only if either deploy step succeeded and auth token is available
         if: (steps.deploy_api_gateway.outcome == 'success' || steps.deploy_queue_consumer.outcome == 'success') && env.CLOUDFLARE_ENV != 'local' && env.SENTRY_AUTH_TOKEN != ''
         run: |
           npm install --no-save @sentry/cli@latest
