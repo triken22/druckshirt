@@ -748,7 +748,6 @@ app.get("/api/printful/products", async (c) => {
     return c.json({ products: formattedProducts });
   } catch (error: any) {
     console.error("Error fetching Printful products:", error);
-    // Avoid caching errors
     return c.json({ error: "Internal server error" }, 500);
   }
 });
@@ -810,7 +809,6 @@ app.post(
   async (c: Context<{ Bindings: Env; Variables: Variables }>) => {
     // Retrieve stripe instance from context using c.var
     const stripe = c.var.stripe;
-    // ... (rest of the logic remains the same)
     try {
       const body = await c.req.json();
       const validation = TokenPurchaseSchema.safeParse(body);
@@ -856,13 +854,7 @@ app.post(
       });
     } catch (error: any) {
       console.error("Error creating token purchase intent:", error);
-      if (error instanceof Stripe.errors.StripeError) {
-        return c.json(
-          { error: "Stripe API error", message: error.message },
-          500
-        );
-      }
-      return c.json({ error: "Internal server error" }, 500);
+      return c.json({ error: "Failed to create payment intent" }, 500);
     }
   }
 );
@@ -873,7 +865,6 @@ app.post(
   async (c: Context<{ Bindings: Env; Variables: Variables }>) => {
     // Retrieve stripe instance from context using c.var
     const stripe = c.var.stripe;
-    // ... (rest of the logic remains the same)
     try {
       const body = await c.req.json();
       const validation = TShirtOrderDetailsSchema.safeParse(body);
@@ -934,7 +925,7 @@ app.post(
       return c.json({ client_secret: paymentIntent.client_secret });
     } catch (error: any) {
       console.error("Error creating T-shirt order intent:", error);
-      throw error;
+      return c.json({ error: "Failed to create payment intent" }, 500);
     }
   }
 );
@@ -1130,7 +1121,6 @@ app.get("/api/get-token-balance", async (c) => {
     return c.json({ tokens_remaining: tokensRemaining });
   } catch (error: any) {
     console.error("Error fetching token balance:", error);
-    // Check if it's a KV-specific error? For now, generic 500.
     return c.json(
       { error: "Internal server error retrieving token balance" },
       500
@@ -1247,12 +1237,11 @@ app.post(
 
 // --- Error Handling ---
 app.onError((err, c) => {
-  // Keep console logging
   console.error("Hono Global Error Handler:", err);
   return c.json({ error: "Internal Server Error" }, 500);
 });
 
-// --- Simple Worker Export (No Sentry Wrapper) ---
+// --- Simple Worker Export (No Sentry Wrapper due to type issues) ---
 export default {
   fetch: app.fetch, // Use Hono's fetch handler directly
 };

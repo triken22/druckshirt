@@ -3,6 +3,7 @@ name = "druckshirt-api-gateway"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
+upload_source_maps = true
 
 # Explicit build step
 [build]
@@ -77,7 +78,12 @@ queue = "order-fulfillment-queue-production" # Verified Production Queue
 binding = "ORDER_QUEUE"
 # --- End Production Values ---
 
-# Variables (Top-Level - Consider if these should match production or local)
+# --- Add production variables here ---
+[env.production.vars]
+ALLOWED_ORIGINS = "<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Replace <...> (No localhost needed for prod)
+R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>" # Replace <...>
+
+# Variables (Top-Level - Defaults for local dev)
 # Usually overridden by environment, but sets default for `wrangler dev` if no --env specified
 [vars]
 # Add localhost AND your PRODUCTION frontend URL, comma-separated

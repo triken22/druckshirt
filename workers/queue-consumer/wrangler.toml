@@ -3,6 +3,7 @@ name = "druckshirt-queue-consumer"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
+upload_source_maps = true # Enable source map upload
 
 # Bindings (Defaults/Local Dev)
 [[kv_namespaces]]
