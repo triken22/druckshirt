@@ -7,6 +7,9 @@ compatibility_flags = [ "nodejs_compat" ]
 # Explicit build step
 [build]
 command = "npm install"
+# Add rollup options to externalize problematic dependencies
+[build.rollup_options]
+external = ["toucan-js"]
 
 # Bindings (Defaults/Local Dev)
 [[kv_namespaces]]
