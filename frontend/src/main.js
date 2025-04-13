@@ -454,33 +454,6 @@ function initializeDesignControls() {
   }
 }
 
-function handleTouchStart(e) {
-  if (!e.target.closest(".design-container")) return;
-  const touch = e.touches[0];
-  isDragging = true;
-  dragStart = {
-    x: touch.clientX - currentPosition.x,
-    y: touch.clientY - currentPosition.y,
-  };
-}
-
-function handleTouchMove(e) {
-  if (!isDragging) return;
-  e.preventDefault();
-
-  const touch = e.touches[0];
-  currentPosition = {
-    x: touch.clientX - dragStart.x,
-    y: touch.clientY - dragStart.y,
-  };
-
-  updateDesignTransform();
-}
-
-function handleTouchEnd() {
-  isDragging = false;
-}
-
 // --- State Persistence Functions (Keep Together) ---
 function saveDesignState() {
   // Save relevant state needed for restoration
@@ -602,6 +575,8 @@ function restoreDesignState() {
           `.size-button[data-size="${selectedSize}"]`
         );
         if (sizeButton) sizeButton.classList.add("selected");
+
+        // updateVariantDisplay(); // No need to call here as we fully restored the variant
       } else {
         console.warn(
           `Saved variant ID ${state.variantId} not found in product ${selectedProduct.id}.`
@@ -609,18 +584,31 @@ function restoreDesignState() {
         // Don't select variant if not found
         selectedVariant = null;
         selectedSize = null;
+        // If variant ID is invalid, try restoring just size if available
+        if (state.size) {
+          selectedSize = state.size;
+          // Try finding color from a potentially saved variable or default
+          if (selectedColorName) {
+            // Requires selectedColorName to be potentially restored or set earlier
+            const sizeButton = sizeSelectorDiv?.querySelector(
+              `.size-button[data-size="${selectedSize}"]`
+            );
+            if (sizeButton) sizeButton.classList.add("selected");
+            updateVariantDisplay(); // Call updateVariantDisplay to find variant by color/size
+          }
+        }
       }
     } else if (state.size && selectedProduct && selectedColorName) {
-      // Fallback: If only size was saved (or variant lookup failed), try setting size
+      // Fallback: If only size was saved (and color is known)
       selectedSize = state.size;
       const sizeButton = sizeSelectorDiv?.querySelector(
         `.size-button[data-size="${selectedSize}"]`
       );
       if (sizeButton) sizeButton.classList.add("selected");
       // Attempt to find variant based on restored color and size
-      updateVariantDisplay();
+      updateVariantDisplay(); // Call updateVariantDisplay here
     } else {
-      // console.log("No variant/size saved or product/color context missing.");
+      // No variant/size saved or product/color context missing.
       selectedVariant = null;
       selectedSize = null;
     }
@@ -1062,19 +1050,21 @@ function updateVariantDisplay() {
 
 function checkDesignCompletion() {
   // Now explicitly checks selectedVariant which is updated by updateVariantDisplay
-  const isComplete =
+  const placementValid = validateDesignPlacement(); // Check placement validity
+  const isComplete = !!(
     selectedProduct &&
     selectedVariant && // This is now reliably set or null
     selectedImageUrl &&
     quantityInput?.value >= 1 &&
-    validateDesignPlacement(); // Add placement validation
+    placementValid // Use the checked value
+  );
 
   console.log("Checking Design Completion:", {
     selectedProduct: !!selectedProduct,
     selectedVariant: !!selectedVariant, // Log if variant is set
     selectedImageUrl: !!selectedImageUrl,
     quantity: quantityInput?.value,
-    placementValid: validateDesignPlacement(), // Log placement validation result
+    placementValid: placementValid, // Log placement validation result explicitly
   });
 
   if (proceedToCheckoutButton) {
@@ -1092,7 +1082,7 @@ function checkDesignCompletion() {
         message = "Bitte füge ein Design hinzu (Upload oder AI).";
       else if (!quantityInput?.value || quantityInput.value < 1)
         message = "Bitte gib eine Menge an.";
-      else if (!validateDesignPlacement())
+      else if (!placementValid)
         message = "Dein Design liegt außerhalb des Druckbereichs.";
       else message = "Bitte vervollständige dein Design.";
     } else {
@@ -2087,6 +2077,79 @@ function getRetryDelay(retryCount) {
   return delay + Math.random() * 1000; // Add jitter
 }
 
+// --- Function Definitions Moved Before DOMContentLoaded ---
+
+function loadGrantId() {
+  currentGrantId = getTokenGrantId();
+  console.log("Loaded Grant ID:", currentGrantId);
+}
+
+async function updateTokenBalanceDisplay() {
+  const balanceDisplay = document.getElementById("token-balance-display");
+  if (!balanceDisplay) return 0;
+  const grantId = getTokenGrantId();
+
+  if (!grantId) {
+    balanceDisplay.textContent = "Tokens: 0";
+    if (aiGenerateButton) aiGenerateButton.disabled = true;
+    return 0;
+  }
+
+  balanceDisplay.textContent = "Tokens: Lade..."; // Show loading state
+  try {
+    const data = await makeApiCall(
+      `${CONFIG.API_BASE_URL}/get-token-balance?grant_id=${encodeURIComponent(
+        grantId
+      )}`,
+      {
+        method: "GET",
+      },
+      (response) => typeof response.tokens_remaining === "number"
+    );
+    const balance = data.tokens_remaining;
+    balanceDisplay.textContent = `Tokens: ${balance}`;
+    if (aiGenerateButton) {
+      aiGenerateButton.disabled = balance <= 0;
+      aiGenerateButton.textContent = `Generieren (${
+        balance > 0 ? "1 Token" : "0 Tokens"
+      })`;
+    }
+    return balance;
+  } catch (error) {
+    console.error("Failed to fetch token balance:", error);
+    balanceDisplay.textContent = "Tokens: Fehler";
+    if (aiGenerateButton) aiGenerateButton.disabled = true;
+    // Don't capture error here, makeApiCall likely did
+    return 0;
+  }
+}
+
+async function fetchAndDisplayProducts() {
+  const productListDiv = document.getElementById("product-list");
+  if (!productListDiv) return;
+
+  productListDiv.innerHTML = "<p>Lade Produkte...</p>";
+  try {
+    const data = await makeApiCall(`${CONFIG.API_BASE_URL}/printful/products`, {
+      method: "GET",
+    });
+    availableProducts = data.products || []; // Store fetched products globally
+    displayProducts(availableProducts); // Call display function
+    // console.log("Fetched Products:", availableProducts);
+
+    // After fetching products, try restoring state IF products were fetched
+    if (availableProducts.length > 0) {
+      console.log("Products loaded, attempting state restoration...");
+      restoreDesignState(); // Attempt restoration now that products are available
+    }
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    productListDiv.innerHTML =
+      "<p>Fehler beim Laden der Produkte. Bitte versuchen Sie es später erneut.</p>";
+    captureErrorEvent(error, "product_fetch");
+  }
+}
+
 // --- Initialization (Keep at the end) ---
 document.addEventListener("DOMContentLoaded", async () => {
   // Select DOM Elements
@@ -2361,148 +2424,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // --- Initial Setup Calls ---
-  loadGrantId(); // Load grant ID first
-  await updateTokenBalanceDisplay(); // Then update balance
-  await fetchAndDisplayProducts();
+  loadGrantId(); // Now defined above
+  await updateTokenBalanceDisplay(); // Now defined above
+  await fetchAndDisplayProducts(); // Now defined above
   // Display initial section (e.g., design)
   showSection("design-section");
 
-  // Restore design state if applicable
-  restoreDesignState();
+  // Restore design state is now called within fetchAndDisplayProducts upon success
+  // restoreDesignState(); // Remove this call from here
 
-  // Moved from inside initializeDesignControls to ensure they are setup
+  // Moved global listeners from inside initializeDesignControls
   document.addEventListener("mousemove", handleMouseMove);
   document.addEventListener("mouseup", handleMouseUp);
   document.addEventListener("touchmove", handleTouchMove);
   document.addEventListener("touchend", handleTouchEnd);
 
   initializeDesignControls(); // Call after potentially needed elements are selected
-
-  // ... (Rest of DOMContentLoaded) ...
 });
 
-// --- Function Definitions Used Within initializeDesignControls (Need to be defined ABOVE it) ---
-// NOTE: These were already moved above, but double-checking structure.
-// handleTouchStart, handleTouchMove, handleTouchEnd should ideally be defined before initializeDesignControls calls them.
+// ... (Keep remaining function definitions AFTER DOMContentLoaded) ...
 
-function handleTouchStart(e) {
-  if (!e.target.closest(".design-container")) return;
-  const touch = e.touches[0];
-  isDragging = true;
-  dragStart = {
-    x: touch.clientX - currentPosition.x,
-    y: touch.clientY - currentPosition.y,
-  };
-}
+// --- Function Definitions Used Within initializeDesignControls (Defined Earlier is better) ---
+// function handleTouchStart(e) { ... }
+// function handleTouchMove(e) { ... }
+// function handleTouchEnd() { ... }
 
-function handleTouchMove(e) {
-  if (!isDragging) return;
-  e.preventDefault();
-
-  const touch = e.touches[0];
-  currentPosition = {
-    x: touch.clientX - dragStart.x,
-    y: touch.clientY - dragStart.y,
-  };
-
-  updateDesignTransform();
-}
-
-function handleTouchEnd() {
-  isDragging = false;
-}
-
-// Ensure mouse drag/move handlers are also defined before use in initializeDesignControls or DOMContentLoaded
-function handleMouseDown(e) {
-  const designImageContainer = document.querySelector(
-    ".design-image-container"
-  );
-  if (e.target.classList.contains("resize-handle")) {
-    e.preventDefault();
-    e.stopPropagation();
-    mockupState.isResizing = true;
-    mockupState.resizeStartX = e.clientX;
-    mockupState.resizeStartY = e.clientY;
-    mockupState.imageStartWidth = designImageContainer.offsetWidth;
-    mockupState.imageStartHeight = designImageContainer.offsetHeight;
-  } else if (e.target === designImageContainer) {
-    e.preventDefault();
-    mockupState.isDragging = true;
-    designImageContainer.style.cursor = "grabbing";
-    mockupState.dragStartX = e.clientX;
-    mockupState.dragStartY = e.clientY;
-    mockupState.imageStartLeft = designImageContainer.offsetLeft;
-    mockupState.imageStartTop = designImageContainer.offsetTop;
-  }
-}
-
-function handleMouseMove(e) {
-  if (!mockupState.isDragging && !mockupState.isResizing) return;
-
-  const mockup = document.getElementById("mockup-container");
-  const designImageContainer = document.querySelector(
-    ".design-image-container"
-  );
-  if (!mockup || !designImageContainer) return;
-
-  if (mockupState.isDragging) {
-    const deltaX = e.clientX - mockupState.dragStartX;
-    const deltaY = e.clientY - mockupState.dragStartY;
-    const newX = mockupState.imageStartLeft + deltaX;
-    const newY = mockupState.imageStartTop + deltaY;
-
-    updateDesignPosition(newX, newY);
-    handleDesignCustomization("drag", {
-      position_x: newX,
-      position_y: newY,
-    });
-  }
-
-  if (mockupState.isResizing) {
-    const deltaX = e.clientX - mockupState.resizeStartX;
-    const deltaY = e.clientY - mockupState.resizeStartY;
-    const newWidth = Math.max(50, mockupState.imageStartWidth + deltaX);
-    const newHeight = Math.max(50, mockupState.imageStartHeight + deltaY);
-
-    updateDesignSize(newWidth, newHeight);
-    handleDesignCustomization("resize", {
-      width: newWidth,
-      height: newHeight,
-    });
-  }
-}
-
-function handleMouseUp() {
-  const designImageContainer = document.querySelector(
-    ".design-image-container"
-  );
-  if (mockupState.isDragging) {
-    mockupState.isDragging = false;
-    if (designImageContainer) {
-      designImageContainer.style.cursor = "grab";
-    }
-    checkDesignCompletion(); // Placement might affect completion
-  }
-  if (mockupState.isResizing) {
-    mockupState.isResizing = false;
-    checkDesignCompletion(); // Size might affect completion
-  }
-}
-
-function handleScaleSliderChange() {
-  const scale = parseFloat(imageScaleSlider.value);
-  updateDesignScale(scale);
-  handleDesignCustomization("scale", { scale_value: scale });
-}
-
-// Ensure all other functions called within DOMContentLoaded are defined above it
-// (e.g., loadGrantId, updateTokenBalanceDisplay, fetchAndDisplayProducts, etc.)
-function loadGrantId() {
-  // ...
-}
-async function updateTokenBalanceDisplay() {
-  // ...
-}
-async function fetchAndDisplayProducts() {
-  // ...
-}
+// Ensure mouse drag/move handlers are also defined before use
+// function handleMouseDown(e) { ... }
+// function handleMouseMove(e) { ... }
+// function handleMouseUp() { ... }
+// function handleScaleSliderChange() { ... }
