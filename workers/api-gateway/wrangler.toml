@@ -4,6 +4,10 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
 
+# Explicit build step
+[build]
+command = "npm install"
+
 # Bindings (Defaults/Local Dev)
 [[kv_namespaces]]
 binding = "STATE_KV"
