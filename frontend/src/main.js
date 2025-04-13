@@ -1316,6 +1316,16 @@ function showSection(sectionId) {
     section.style.display = section.id === sectionId ? "block" : "none";
   });
 
+  // Update active state for nav buttons
+  const navButtons = document.querySelectorAll(".nav-button");
+  navButtons.forEach((button) => {
+    if (button.dataset.target === sectionId) {
+      button.classList.add("active");
+    } else {
+      button.classList.remove("active");
+    }
+  });
+
   trackPageView(sectionId);
 }
 
@@ -2584,23 +2594,5 @@ function switchTab(targetId) {
   captureAnalyticsEvent("tab_switched", { tab_id: targetId });
 }
 
-// Ensure showSection is defined at the correct scope
-function showSection(sectionId) {
-  const sections = document.querySelectorAll(".section");
-  sections.forEach((section) => {
-    section.style.display = section.id === sectionId ? "block" : "none";
-  });
-
-  // Update active state for nav buttons
-  const navButtons = document.querySelectorAll(".nav-button");
-  navButtons.forEach((button) => {
-    if (button.dataset.target === sectionId) {
-      button.classList.add("active");
-    } else {
-      button.classList.remove("active");
-    }
-  });
-
-  // Track page view
-  trackPageView(sectionId);
-}
+// Removing duplicate showSection function here
+// function showSection was already defined earlier
