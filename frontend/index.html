@@ -12,7 +12,7 @@
       rel="stylesheet"
     />
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="style.css" />
     <!-- Load Stripe.js early -->
     <script src="https://js.stripe.com/v3/" defer></script>
     <!-- PostHog Snippet -->
@@ -78,11 +78,15 @@
     <header>
       <div class="container header-content">
         <div class="logo">
-          <img src="./src/assets/maaakeit-logo.png" alt="DruckMeinShirt Logo" />
+          <img
+            src="logo.png"
+            alt="DruckMeinShirt Logo"
+            onerror="this.src='https://via.placeholder.com/150x50?text=Logo'"
+          />
           <h1>DruckMeinShirt</h1>
         </div>
         <nav>
-          <button class="nav-button button" data-target="design-section">
+          <button class="nav-button button active" data-target="design-section">
             Design
           </button>
           <button class="nav-button button" data-target="tokens-section">
@@ -104,11 +108,13 @@
             <h3>1. Produkt Wählen</h3>
             <div id="product-list" class="selection-list">
               <!-- Product items will be loaded here -->
+              <p>Lade Produkte...</p>
             </div>
 
             <h3>2. Farbe Wählen</h3>
             <div id="color-swatches" class="swatch-container">
               <!-- Color swatches loaded here -->
+              <p>Wähle zuerst ein Produkt</p>
             </div>
 
             <h3>3. Design Hinzufügen</h3>
@@ -173,6 +179,7 @@
               <label>Größe:</label>
               <div id="size-selector" class="size-selector">
                 <!-- Size buttons loaded here -->
+                <p>Wähle zuerst Farbe</p>
               </div>
             </div>
             <div class="form-group">
@@ -386,6 +393,6 @@
       </div>
     </footer>
 
-    <script type="module" src="src/main.js"></script>
+    <script type="module" src="main.js"></script>
   </body>
 </html>

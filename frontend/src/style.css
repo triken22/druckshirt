@@ -1,26 +1,26 @@
 :root {
-  --primary-color: #3498db; /* Example blue */
+  --primary-color: #3498db;
   --primary-color-dark: #2980b9;
-  --secondary-color: #2ecc71; /* Example green */
+  --secondary-color: #2ecc71;
   --background-color: #ffffff;
-  --surface-color: #f8f9fa; /* Light grey for cards/sections */
+  --surface-color: #f8f9fa;
   --text-color: #333333;
   --text-color-light: #666666;
   --border-color: #dee2e6;
   --error-color: #e74c3c;
   --success-color: #2ecc71;
   --info-color: #3498db;
+  --accent-color: #f39c12;
 
   --font-family: "Inter", sans-serif;
-  --border-radius: 4px;
+  --border-radius: 6px;
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
   --spacing-md: 1rem;
   --spacing-lg: 1.5rem;
   --spacing-xl: 2rem;
+  --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
-
-/* Remove all styles above this :root block */
 
 * {
   box-sizing: border-box;
@@ -29,7 +29,7 @@
 }
 
 html {
-  font-size: 16px; /* Base font size */
+  font-size: 16px;
 }
 
 body {
@@ -49,7 +49,7 @@ main {
 }
 
 section {
-  margin-bottom: var(--spacing-xl); /* Increase space between sections */
+  margin-bottom: var(--spacing-xl);
 }
 
 h1,
@@ -61,18 +61,35 @@ h6 {
   margin-bottom: var(--spacing-md);
   font-weight: 700;
   line-height: 1.3;
+  color: var(--text-color);
 }
 
 h1 {
   font-size: 2.5rem;
 }
+
 h2 {
   font-size: 2rem;
-  margin-top: var(--spacing-lg); /* Add top margin to section titles */
+  margin-top: var(--spacing-lg);
+  position: relative;
+  padding-bottom: 0.5rem;
 }
+
+h2::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 60px;
+  height: 3px;
+  background-color: var(--primary-color);
+}
+
 h3 {
   font-size: 1.5rem;
+  margin-top: var(--spacing-lg);
 }
+
 h4 {
   font-size: 1.2rem;
 }
@@ -84,10 +101,75 @@ p {
 a {
   color: var(--primary-color);
   text-decoration: none;
+  transition: color 0.2s ease;
 }
 
 a:hover {
+  color: var(--primary-color-dark);
   text-decoration: underline;
+}
+
+/* Header */
+header {
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: var(--spacing-md) 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.logo img {
+  height: 40px;
+  width: auto;
+}
+
+.logo h1 {
+  font-size: 1.5rem;
+  margin: 0;
+  color: var(--primary-color);
+}
+
+nav {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+/* Container */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-md);
+}
+
+/* Cards */
+.card {
+  background-color: var(--surface-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  box-shadow: var(--box-shadow);
+  border: 1px solid var(--border-color);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
 }
 
 /* Forms */
@@ -109,7 +191,8 @@ select {
   border-radius: var(--border-radius);
   font-size: 1rem;
   margin-bottom: var(--spacing-md);
-  background-color: #fff; /* Ensure background for inputs */
+  background-color: #fff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 input[type="file"] {
@@ -121,11 +204,12 @@ textarea:focus,
 select:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
 }
 
 input[type="range"] {
   width: 100%;
+  margin: var(--spacing-sm) 0;
 }
 
 .form-group {
@@ -134,92 +218,332 @@ input[type="range"] {
 
 .form-row {
   display: flex;
-  flex-wrap: wrap; /* Allow wrapping on small screens */
+  flex-wrap: wrap;
   gap: var(--spacing-md);
 }
+
 .form-row .form-group {
   flex: 1;
-  min-width: 150px; /* Prevent fields becoming too narrow */
-}
-
-/* Utility Classes */
-.container {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 var(--spacing-md);
-}
-
-.card {
-  background-color: var(--surface-color);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  min-width: 150px;
 }
 
 /* Buttons */
 .button {
-  /* ... existing styles ... */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: var(--border-radius);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  background-color: var(--surface-color);
+  color: var(--text-color);
   margin-right: var(--spacing-sm);
   margin-bottom: var(--spacing-sm);
-  vertical-align: middle; /* Align buttons nicely if inline */
+}
+
+.button:hover {
+  background-color: #e9ecef;
+}
+
+.button-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.button-primary:hover {
+  background-color: var(--primary-color-dark);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .button.loading {
   cursor: wait;
   opacity: 0.7;
-  /* Add spinner via pseudo-element if desired */
-  /* Example: 
-    position: relative;
-    color: transparent !important; 
-    */
+  position: relative;
+  color: transparent !important;
 }
-/* Add spinner CSS if needed */
-/* .button.loading::after { ... spinner styles ... } */
 
-/* ... other button styles (.button-primary, :disabled) ... */
+.button.loading::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-top: -8px;
+  margin-left: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* Status Messages */
 .status-message {
-  /* ... existing styles ... */
-}
-.status-message.error {
-  /* ... */
-}
-.status-message.success {
-  /* ... */
-}
-.status-message.info {
-  /* ... */
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  border-radius: var(--border-radius);
+  display: none;
 }
 
-/* Header */
-/* ... existing header styles ... */
+.status-message.error {
+  background-color: rgba(231, 76, 60, 0.1);
+  color: var(--error-color);
+  border-left: 3px solid var(--error-color);
+  display: block;
+}
+
+.status-message.success {
+  background-color: rgba(46, 204, 113, 0.1);
+  color: var(--success-color);
+  border-left: 3px solid var(--success-color);
+  display: block;
+}
+
+.status-message.info {
+  background-color: rgba(52, 152, 219, 0.1);
+  color: var(--info-color);
+  border-left: 3px solid var(--info-color);
+  display: block;
+}
 
 /* Tabs */
-/* ... existing tab styles ... */
+.tab-container {
+  margin-bottom: var(--spacing-lg);
+}
 
-/* Image Previews & Grids */
-/* ... existing image styles ... */
+.tab-buttons {
+  display: flex;
+  margin-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+}
 
-/* Selection Lists (Products, Shipping) */
-/* ... existing selection list styles ... */
+.tab-button {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-color-light);
+  margin-right: var(--spacing-md);
+  transition: all 0.2s ease;
+}
 
-/* Color Swatches */
-/* ... existing swatch styles ... */
+.tab-button:hover {
+  color: var(--primary-color);
+}
 
-/* Size Selector */
-/* ... existing size selector styles ... */
+.tab-button.active {
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-color);
+}
+
+.tab-content {
+  display: none;
+  padding: var(--spacing-md) 0;
+}
+
+.tab-content.active {
+  display: block;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 
 /* Design Layout */
-/* ... existing design layout styles ... */
+.design-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-xl);
+  margin-top: var(--spacing-lg);
+}
+
+.design-controls {
+  padding: var(--spacing-md);
+  background-color: white;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+}
+
+/* Selection Lists */
+.selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+}
+
+.product-item,
+.shipping-option {
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.product-item:hover,
+.shipping-option:hover {
+  background-color: rgba(52, 152, 219, 0.1);
+}
+
+.product-item.selected,
+.shipping-option.selected {
+  background-color: rgba(52, 152, 219, 0.2);
+  border-color: var(--primary-color);
+  font-weight: 500;
+}
+
+/* Color Swatches */
+.swatch-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+
+.color-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  border: 2px solid var(--border-color);
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.color-swatch.selected {
+  border: 2px solid var(--primary-color);
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
+}
+
+/* Size Selector */
+.size-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.size-button {
+  min-width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.size-button:hover {
+  border-color: var(--primary-color);
+}
+
+.size-button.selected {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+/* Image Previews & Grids */
+.image-preview {
+  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-sm);
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: white;
+}
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.results-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.results-grid img:hover {
+  transform: scale(1.05);
+}
+
+.results-grid img.selected {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.3);
+}
 
 /* Mockup Styles */
-/* ... existing mockup viewer/area styles ... */
+.mockup-viewer {
+  position: sticky;
+  top: calc(var(--spacing-lg) + 60px);
+  height: fit-content;
+}
+
+.mockup-area {
+  aspect-ratio: 3/4;
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  box-shadow: var(--box-shadow);
+}
+
 #mockup-background {
-  /* ... existing styles ... */
+  width: 100%;
+  height: 100%;
+  background-color: #f0f0f0;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
 }
 
 #design-image-container {
@@ -231,51 +555,22 @@ input[type="range"] {
   cursor: grab;
   user-select: none;
   border: 1px dashed rgba(0, 0, 0, 0.2);
-  /* Add a subtle inner shadow for depth maybe? */
-  /* box-shadow: inset 0 0 5px rgba(0,0,0,0.1); */
+  transition: border-color 0.2s ease;
 }
 
 #design-image-container:hover {
   border-color: rgba(0, 0, 0, 0.5);
 }
 
-/* ... rest of mockup styles ... */
-
-/* Stripe Element Container */
-/* ... existing stripe container styles ... */
-
-/* Checkout Layout */
-/* ... existing checkout layout styles ... */
-
-/* Footer */
-/* ... existing footer styles ... */
-
-/* Responsive */
-@media (max-width: 768px) {
-  /* ... existing header adjustments ... */
-  .form-row {
-    flex-direction: column; /* Stack form row items */
-    gap: 0;
-  }
-  .form-row .form-group {
-    margin-bottom: var(--spacing-md); /* Add spacing back */
-  }
-}
-
-/* Add other breakpoints if needed */
-
-.mockup-viewer {
-  /* Styles for right column */
-  position: sticky;
-  top: calc(
-    var(--spacing-lg) + 60px
-  ); /* Adjust sticky top offset considering header height */
-  height: fit-content; /* Ensure sticky positioning works correctly */
+#design-image-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .resize-handle {
   position: absolute;
-  bottom: 5px; /* Position slightly offset from corner */
+  bottom: 5px;
   right: 5px;
   width: 12px;
   height: 12px;
@@ -284,5 +579,133 @@ input[type="range"] {
   border-radius: 50%;
   cursor: nwse-resize;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  z-index: 10; /* Ensure it's above the container border */
+  z-index: 10;
+}
+
+/* Checkout Layout */
+.checkout-layout {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--spacing-xl);
+}
+
+.order-summary-box {
+  position: sticky;
+  top: calc(var(--spacing-lg) + 60px);
+  height: fit-content;
+}
+
+/* Stripe Element Container */
+.stripe-container {
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background-color: white;
+}
+
+/* Grant ID Display */
+.grant-id-box {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background-color: rgba(52, 152, 219, 0.1);
+  border-radius: var(--border-radius);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+/* Footer */
+footer {
+  background-color: #f8f9fa;
+  padding: var(--spacing-lg) 0;
+  margin-top: var(--spacing-xl);
+  border-top: 1px solid var(--border-color);
+}
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.legal-links {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.analytics-opt-out {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .design-layout,
+  .checkout-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .mockup-viewer {
+    position: relative;
+    top: 0;
+    order: -1;
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .mockup-area {
+    max-width: 400px;
+    margin: 0 auto;
+  }
+
+  .header-content {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  nav {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .form-row {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .form-row .form-group {
+    margin-bottom: var(--spacing-md);
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+
+  h2 {
+    font-size: 1.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .tab-buttons {
+    flex-direction: column;
+    border-bottom: none;
+  }
+
+  .tab-button {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .tab-button.active {
+    border-color: var(--primary-color);
+  }
+}
+
+/* Add this to your existing CSS */
+.analytics-opt-out {
+  margin-top: var(--spacing-md);
 }
