@@ -58,7 +58,7 @@ jobs:
         run: |
           npm install --no-save @sentry/cli@latest
           export SENTRY_ORG=high-five-financial-education
-          export SENTRY_PROJECT=druckshirt-api-gateway-staging.highfive.workers.dev # <-- REPLACE
+          export SENTRY_PROJECT=node-cloudflare-workers
           export SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           export SENTRY_RELEASE=$(npx sentry-cli releases propose-version)
           echo "Creating Sentry release: $SENTRY_RELEASE"
@@ -93,7 +93,7 @@ jobs:
         run: |
           npm install --no-save @sentry/cli@latest
           export SENTRY_ORG=high-five-financial-education
-          export SENTRY_PROJECT=druckshirt-queue-consumer-staging.highfive.workers.dev # <-- REPLACE
+          export SENTRY_PROJECT=node-cloudflare-workers
           export SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           export SENTRY_RELEASE=$(npx sentry-cli releases propose-version)
           echo "Uploading Queue Consumer source maps for release: $SENTRY_RELEASE"
