@@ -1702,3 +1702,37 @@ async function handleRecoveryRequest() {
     setLoadingState(recoveryRequestButton, false);
   }
 }
+
+/** Displays the list of fetched products */
+function displayProducts(products) {
+  productListDiv.innerHTML = ""; // Clear existing
+  if (!products || products.length === 0) {
+    productListDiv.innerHTML =
+      "<p>Keine Produkte gefunden oder Fehler beim Laden.</p>"; // More informative message
+    return;
+  }
+  products.forEach((product) => {
+    const productDiv = document.createElement("div");
+    // Use card style if appropriate, or keep specific class
+    productDiv.classList.add("product-item", "card"); // Assuming card style is suitable
+    productDiv.dataset.productId = product.id;
+
+    // Safely get the image URL
+    const imageUrl = product.default_image_url;
+    let imageHtml = "";
+    if (imageUrl) {
+      // Only add image tag if URL exists
+      imageHtml = `<img src="${imageUrl}" alt="${product.name}" style="width: 50px; height: auto; margin-right: 10px; vertical-align: middle; border-radius: 3px;">`;
+    } else {
+      // Optional: Add a placeholder box or icon if no image
+      imageHtml = `<span style="display: inline-block; width: 50px; height: 50px; background-color: #eee; margin-right: 10px; vertical-align: middle; text-align: center; line-height: 50px; font-size: 10px; color: #aaa; border-radius: 3px;">No Img</span>`;
+    }
+
+    productDiv.innerHTML = `
+            ${imageHtml}
+            <span>${product.name}</span>
+        `;
+    productDiv.addEventListener("click", handleProductSelection);
+    productListDiv.appendChild(productDiv);
+  });
+}
