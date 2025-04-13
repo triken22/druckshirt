@@ -112,10 +112,16 @@ if (CONFIG.SENTRY.DSN) {
 console.log("DruckMeinShirt frontend loaded!");
 
 // Initialize PostHog with configuration from CONFIG
-posthog.init(CONFIG.POSTHOG.API_KEY, {
-  api_host: CONFIG.POSTHOG.HOST_URL,
-  person_profiles: "identified_only",
-});
+// Only initialize if the API key is actually provided
+if (CONFIG.POSTHOG.API_KEY) {
+  posthog.init(CONFIG.POSTHOG.API_KEY, {
+    api_host: CONFIG.POSTHOG.HOST_URL,
+    person_profiles: "identified_only", // Consider GDPR implications
+  });
+  console.log("PostHog initialized (Frontend)");
+} else {
+  console.warn("PostHog API Key not configured. PostHog disabled (Frontend).");
+}
 
 /**
  * Checks and returns the current PostHog opt-out state
@@ -619,8 +625,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   submitPaymentButton = document.getElementById("submit-payment-button");
   paymentMessage = document.getElementById("payment-message");
   grantIdDisplay = document.getElementById("grant-id-display");
-
-  // Select Phase 2 Elements
   aiPromptInput = document.getElementById("ai-prompt-input");
   aiGenerateButton = document.getElementById("ai-generate-button");
   aiStatus = document.getElementById("ai-status");
@@ -631,8 +635,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   mockupImageOverlay = document.getElementById("design-image-overlay");
   tabButtons = document.querySelectorAll(".tab-button");
   tabContents = document.querySelectorAll(".tab-content");
-
-  // Select Phase 3 Elements
   sizeSelectorDiv = document.getElementById("size-selector");
   quantityInput = document.getElementById("quantity-input");
   proceedToCheckoutButton = document.getElementById(
@@ -669,7 +671,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   designImageContainer = document.getElementById("design-image-container");
   imageScaleSlider = document.getElementById("image-scale-slider");
   navButtons = document.querySelectorAll(".nav-button");
-
   posthogOptOutToggle = document.getElementById("posthog-opt-out-toggle");
 
   // Initialize Stripe (add null check)
@@ -712,7 +713,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initialize PostHog opt-out state (add null check for toggle)
   if (posthogOptOutToggle) {
-    if (window.posthog) {
+    if (window.posthog && CONFIG.POSTHOG.API_KEY) {
+      // Add check for API Key here too
       try {
         const hasOptedOut = await checkOptOutState();
         posthogOptOutToggle.checked = hasOptedOut;
@@ -724,7 +726,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         console.error("Error initializing PostHog opt-out state:", err);
       }
     } else {
-      console.warn("PostHog not available. Analytics disabled.");
+      console.warn(
+        "PostHog not available or not configured. Analytics disabled."
+      );
       posthogOptOutToggle.disabled = true;
     }
   } else {
@@ -732,102 +736,99 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // --- Add Event Listeners (with null checks) ---
-  // ADD NULL CHECKS to prevent 'Cannot read properties of null' errors
+  // Null checks added/verified for all event listeners attached here
+
+  if (imageUploadInput) {
+    imageUploadInput.addEventListener("change", handleImageUpload);
+  } else {
+    console.warn("#image-upload-input not found");
+  }
+
   if (imageUploadButton) {
     imageUploadButton.dataset.originalText = "Für Design Verwenden";
     imageUploadButton.textContent = "Für Design Verwenden";
-    // Ensure handleUseUploadedImage is defined before adding listener
     if (typeof handleUseUploadedImage === "function") {
       imageUploadButton.addEventListener("click", handleUseUploadedImage);
     } else {
       console.error("handleUseUploadedImage function is not defined!");
     }
   } else {
-    console.warn("Element #image-upload-button not found.");
+    console.warn("#image-upload-button not found.");
   }
 
   if (buyTokensButton) {
+    // ADDED NULL CHECK
     buyTokensButton.addEventListener("click", async (e) => {
       e.preventDefault();
       await initiateTokenPurchase();
     });
   } else {
-    console.warn("Element #buy-tokens-button not found.");
+    console.warn("#buy-tokens-button not found"); // ADDED Warning
   }
 
   if (submitPaymentButton) {
     submitPaymentButton.addEventListener("click", async (e) => {
       e.preventDefault();
-      await handleTokenPaymentSubmit();
+      await handlePaymentSubmit();
     });
   } else {
-    console.warn("Element #submit-payment-button not found.");
+    console.warn("#submit-payment-button not found");
   }
 
   if (aiGenerateButton) {
-    aiGenerateButton.dataset.originalText = "Generieren";
-    aiGenerateButton.textContent = "Generieren";
-    aiGenerateButton.addEventListener("click", handleAiGenerate);
+    aiGenerateButton.addEventListener("click", handleGenerateImage);
   } else {
-    console.warn("Element #ai-generate-button not found.");
-  }
-
-  if (tabButtons && tabButtons.length > 0) {
-    tabButtons.forEach((button) => {
-      // Ensure switchTab is defined
-      if (typeof switchTab === "function") {
-        button.addEventListener("click", () =>
-          switchTab(button.dataset.target)
-        );
-      } else {
-        console.error("switchTab function is not defined!");
-      }
-    });
-  } else {
-    console.warn("Elements matching .tab-button not found.");
+    console.warn("#ai-generate-button not found");
   }
 
   if (aiResultsGrid) {
     aiResultsGrid.addEventListener("click", handleAiImageSelection);
   } else {
-    console.warn("Element #ai-results-grid not found.");
+    console.warn("#ai-results-grid not found");
   }
 
   if (productListDiv) {
     productListDiv.addEventListener("click", handleProductSelection);
   } else {
-    console.warn("Element #product-list not found.");
+    console.warn("#product-list not found");
   }
 
   if (colorSwatchesDiv) {
     colorSwatchesDiv.addEventListener("click", handleColorSelection);
   } else {
-    console.warn("Element #color-swatches not found.");
+    console.warn("#color-swatches not found");
   }
 
-  // Add Phase 3 Listeners (with null checks)
+  if (tabButtons && tabContents) {
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => switchTab(button.dataset.tab));
+    });
+  } else {
+    console.warn("Tab buttons or contents not found");
+  }
+
   if (sizeSelectorDiv) {
     sizeSelectorDiv.addEventListener("click", handleSizeSelection);
   } else {
-    console.warn("Element #size-selector not found.");
+    console.warn("#size-selector not found");
   }
 
   if (quantityInput) {
-    quantityInput.addEventListener("change", checkDesignCompletion);
+    quantityInput.addEventListener("change", handleQuantityChange);
   } else {
-    console.warn("Element #quantity-input not found.");
+    console.warn("#quantity-input not found");
   }
 
   if (proceedToCheckoutButton) {
-    proceedToCheckoutButton.addEventListener("click", showCheckoutSection);
+    proceedToCheckoutButton.addEventListener("click", handleProceedToCheckout);
   } else {
-    console.warn("Element #proceed-to-checkout-button not found.");
+    console.warn("#proceed-to-checkout-button not found");
   }
 
   if (getShippingButton) {
     getShippingButton.addEventListener("click", handleGetShippingOptions);
   } else {
-    console.warn("Element #get-shipping-button not found.");
+    console.warn("#get-shipping-button not found");
   }
 
   if (shippingOptionsListDiv) {
@@ -836,63 +837,59 @@ document.addEventListener("DOMContentLoaded", async () => {
       handleShippingOptionSelection
     );
   } else {
-    console.warn("Element #shipping-options-list not found.");
+    console.warn("#shipping-options-list not found");
   }
 
   if (submitTshirtOrderButton) {
     submitTshirtOrderButton.addEventListener("click", handleSubmitTshirtOrder);
   } else {
-    console.warn("Element #submit-tshirt-order-button not found.");
+    console.warn("#submit-tshirt-order-button not found");
   }
 
   if (recoveryRequestButton) {
     recoveryRequestButton.addEventListener("click", handleRecoveryRequest);
   } else {
-    console.warn("Element #recovery-request-button not found.");
+    console.warn("#recovery-request-button not found");
   }
 
-  if (navButtons && navButtons.length > 0) {
-    navButtons.forEach((button) => {
-      // Ensure showSection is defined
-      if (typeof showSection === "function") {
-        button.addEventListener("click", () =>
-          showSection(button.dataset.target)
-        );
-      } else {
-        console.error("showSection function is not defined!");
-      }
-    });
-  } else {
-    console.warn("Elements matching .nav-button not found.");
-  }
-
-  // Mockup Interaction Listeners (with null checks)
   if (designImageContainer) {
     designImageContainer.addEventListener("mousedown", handleMouseDown);
-    const resizeHandle = designImageContainer.querySelector(".resize-handle");
-    if (resizeHandle) {
-      resizeHandle.addEventListener("mousedown", handleMouseDown);
-    } // No warning if handle is missing, might be intentional
   } else {
-    console.warn("Element #design-image-container not found.");
+    console.warn("#design-image-container not found");
   }
 
-  if (imageScaleSlider) {
-    imageScaleSlider.addEventListener("input", handleScaleSlider);
-  } else {
-    console.warn("Element #image-scale-slider not found.");
-  }
-
-  // Assuming document always exists for these two
+  // Add global mouse move/up listeners for dragging/resizing
   document.addEventListener("mousemove", handleMouseMove);
   document.addEventListener("mouseup", handleMouseUp);
 
-  // Initial Calls (add null checks if functions depend on elements existing)
-  if (typeof fetchAndDisplayTokenBalance === "function")
-    fetchAndDisplayTokenBalance();
-  if (typeof fetchAndDisplayProducts === "function") fetchAndDisplayProducts();
-  if (typeof showSection === "function") showSection("design-section");
-  if (typeof restoreDesignState === "function") restoreDesignState();
+  if (imageScaleSlider) {
+    imageScaleSlider.addEventListener("input", handleScaleSliderChange);
+  } else {
+    console.warn("#image-scale-slider not found");
+  }
+
+  if (navButtons) {
+    navButtons.forEach((button) => {
+      button.addEventListener("click", (e) => {
+        const sectionId = e.target.getAttribute("data-section");
+        if (sectionId) {
+          showSection(sectionId);
+        }
+      });
+    });
+  } else {
+    console.warn(".nav-button elements not found");
+  }
+
+  // --- Initial Setup Calls ---
+  loadGrantId(); // Load grant ID first
+  await updateTokenBalanceDisplay(); // Then update balance
+  await fetchAndDisplayProducts();
+  // Display initial section (e.g., design)
+  showSection("design-section");
+
+  // Restore design state if applicable
+  restoreDesignState();
 });
 
 // --- Helper Functions ---

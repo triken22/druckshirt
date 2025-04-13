@@ -587,42 +587,34 @@ interface FormattedProduct {
 
 // GET /api/printful/products
 app.get("/api/printful/products", async (c) => {
-  if (!c.env.PRINTFUL_API_KEY || !c.env.STATE_KV) {
-    console.error("PRINTFUL_API_KEY or STATE_KV binding missing.");
-    return c.json({ error: "Server configuration error" }, 500);
-  }
-
-  let cacheHit = false;
   try {
+    if (!c.env.PRINTFUL_API_KEY || !c.env.STATE_KV) {
+      console.error("PRINTFUL_API_KEY or STATE_KV binding missing.");
+      return c.json({ error: "Server configuration error" }, 500);
+    }
+
+    let cacheHit = false;
+
     // --- Query Parameter Handling ---
     const limitQuery = c.req.query("limit");
     const offsetQuery = c.req.query("offset");
-    const categoryIdQuery = c.req.query("category_id"); // Example: Allow category filtering
-
-    // Validate and parse parameters (add more robust validation as needed)
-    const limit = limitQuery ? parseInt(limitQuery, 10) : 20; // Default limit
+    const categoryIdQuery = c.req.query("category_id");
+    const limit = limitQuery ? parseInt(limitQuery, 10) : 20;
     const offset = offsetQuery ? parseInt(offsetQuery, 10) : 0;
     const categoryId = categoryIdQuery ? categoryIdQuery : null;
 
-    if (isNaN(limit) || limit <= 0 || limit > 100) {
-      // Printful max limit is 100
-      return c.json(
-        { error: "Invalid limit parameter. Must be between 1 and 100." },
-        400
-      );
-    }
-    if (isNaN(offset) || offset < 0) {
-      return c.json(
-        { error: "Invalid offset parameter. Must be 0 or greater." },
-        400
-      );
+    if (
+      isNaN(limit) ||
+      limit <= 0 ||
+      limit > 100 ||
+      isNaN(offset) ||
+      offset < 0
+    ) {
+      return c.json({ error: "Invalid pagination parameters." }, 400);
     }
 
     // --- KV Caching Logic ---
-    // Construct cache key based on parameters that affect the result
     const cacheKey = `printful:products:l=${limit}:o=${offset}${categoryId ? `:c=${categoryId}` : ""}`;
-
-    // Try fetching from cache first
     const cachedData = await c.env.STATE_KV.get<FormattedProduct[]>(cacheKey, {
       type: "json",
     });
@@ -643,9 +635,8 @@ app.get("/api/printful/products", async (c) => {
     queryParams.set("limit", limit.toString());
     queryParams.set("offset", offset.toString());
     if (categoryId) {
-      queryParams.set("category_id", categoryId); // Pass category ID if provided
+      queryParams.set("category_id", categoryId);
     }
-    // TODO: Potentially filter specific product IDs if needed via queryParams.set('product_ids', '...')
 
     const response = await printfulRequestGateway(
       c.env.PRINTFUL_API_KEY,
@@ -682,7 +673,7 @@ app.get("/api/printful/products", async (c) => {
       (product: PrintfulProduct) => {
         const availableSizes = [
           ...new Set(product.variants.map((v) => v.size)),
-        ].sort(); // Unique sorted sizes
+        ].sort();
         const availableColors = product.variants
           .reduce(
             (acc, v) => {
@@ -693,7 +684,7 @@ app.get("/api/printful/products", async (c) => {
             },
             [] as { name: string; code: string }[]
           )
-          .sort((a, b) => a.name.localeCompare(b.name)); // Unique sorted colors
+          .sort((a, b) => a.name.localeCompare(b.name));
 
         const variants: FormattedVariant[] = product.variants.map((v) => ({
           id: v.id,
@@ -701,10 +692,9 @@ app.get("/api/printful/products", async (c) => {
           color: v.color,
           color_code: v.color_code,
           in_stock: v.in_stock,
-          image_url: v.image, // Pass variant image URL
+          image_url: v.image,
         }));
 
-        // Format placements data
         const placements: FormattedPlacement[] = (product.placements || []).map(
           (p) => ({
             placement: p.placement,
@@ -723,13 +713,12 @@ app.get("/api/printful/products", async (c) => {
           available_sizes: availableSizes,
           available_colors: availableColors,
           variants: variants,
-          placements: placements, // Include formatted placements
+          placements: placements,
         };
       }
     );
 
     // --- Store in Cache ---
-    // Use waitUntil to avoid blocking the response
     c.executionCtx.waitUntil(
       c.env.STATE_KV.put(cacheKey, JSON.stringify(formattedProducts), {
         expirationTtl: PRINTFUL_PRODUCTS_CACHE_TTL,
@@ -747,8 +736,17 @@ app.get("/api/printful/products", async (c) => {
 
     return c.json({ products: formattedProducts });
   } catch (error: any) {
-    console.error("Error fetching Printful products:", error);
-    return c.json({ error: "Internal server error" }, 500);
+    console.error("Error in /api/printful/products route:", error);
+    // Ensure a JSON error response is sent
+    return c.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Internal server error fetching products",
+      },
+      500
+    );
   }
 });
 
