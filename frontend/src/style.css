@@ -851,3 +851,91 @@ footer {
   margin: 10px 0;
   font-size: 0.9em;
 }
+
+/* Print Area Guide */
+.print-area-guide {
+  z-index: 1;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.print-area-guide:hover {
+  opacity: 0.4;
+}
+
+/* Update Design Container */
+.design-container {
+  position: absolute;
+  cursor: move;
+  z-index: 2;
+  transform-origin: center;
+  transition: transform 0.1s ease;
+  will-change: transform;
+}
+
+.design-container img {
+  max-width: 100%;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+.design-container.dragging {
+  opacity: 0.8;
+  cursor: grabbing;
+}
+
+/* Design Controls */
+.design-controls {
+  position: absolute;
+  bottom: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 5px 10px;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.design-controls button {
+  padding: 5px 10px;
+  border: none;
+  background: #007bff;
+  color: white;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.design-controls button:hover {
+  background: #0056b3;
+}
+
+.design-controls button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+/* Mockup Container */
+.mockup-container {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.mockup-image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.mockup-image-overlay.active {
+  pointer-events: auto;
+}

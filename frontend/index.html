@@ -219,43 +219,31 @@
             </button>
           </div>
 
-          <div class="mockup-area">
-            <div id="mockup-background">
-              <div id="design-image-container">
+          <div class="mockup-container">
+            <div class="mockup-image-overlay">
+              <div class="print-area-guide"></div>
+              <div class="design-container">
                 <img
-                  id="design-image"
-                  alt="Your design"
+                  src=""
+                  alt="Selected design"
+                  id="selected-design"
                   style="display: none"
                 />
+                <div class="design-controls">
+                  <button id="rotate-left" title="Rotate Left">↶</button>
+                  <button id="rotate-right" title="Rotate Right">↷</button>
+                  <button id="reset-position" title="Reset Position">
+                    Reset
+                  </button>
+                </div>
               </div>
-              <div
-                id="printable-area-overlay"
-                class="printable-area-overlay"
-                style="display: none"
-              ></div>
-              <img
-                id="mockup-image-overlay"
-                src="/assets/mockup-overlay.png"
-                alt="Mockup overlay"
-                style="display: none"
-              />
             </div>
-            <div id="message-container"></div>
-            <div class="controls">
-              <input
-                type="file"
-                id="image-upload"
-                accept="image/*"
-                style="display: none"
-              />
-              <button id="upload-button" class="button">Upload Design</button>
-              <button
-                id="toggle-printable-area"
-                class="button button-secondary"
-              >
-                Show Printable Area
-              </button>
-            </div>
+            <img
+              src=""
+              alt="Product mockup"
+              id="product-mockup"
+              style="display: none"
+            />
           </div>
         </div>
       </section>

@@ -227,13 +227,19 @@ let selectedShippingOption = null;
 let tshirtClientSecret = null;
 let tshirtPaymentElement = null;
 
-// Mockup Interaction State
-let isDragging = false;
-let dragStartX, dragStartY;
-let imageStartLeft, imageStartTop;
-let isResizing = false;
-let resizeStartX, resizeStartY;
-let imageStartWidth, imageStartHeight;
+// Mockup interaction state
+const mockupState = {
+  isDragging: false,
+  dragStartX: 0,
+  dragStartY: 0,
+  isResizing: false,
+  resizeStartX: 0,
+  resizeStartY: 0,
+  imageStartWidth: 0,
+  imageStartHeight: 0,
+  imageStartLeft: 0,
+  imageStartTop: 0,
+};
 
 // --- PostHog Import & Config ---
 // Remove JS import - handled by snippet
@@ -241,6 +247,366 @@ let imageStartWidth, imageStartHeight;
 
 // --- DOM Elements ---
 let posthogOptOutToggle;
+
+// --- Design Customization Constants ---
+const DESIGN_CONSTRAINTS = {
+  MIN_SCALE: 0.5,
+  MAX_SCALE: 2.0,
+  MIN_SIZE_PX: 50,
+  MAX_SIZE_PX: 500,
+  POSITION_MARGIN: 10,
+};
+
+// --- Design State Management ---
+let designState = {
+  scale: 1.0,
+  position: { x: 0, y: 0 },
+  rotation: 0,
+  originalSize: { width: 0, height: 0 },
+};
+
+/**
+ * Persists the current design state to sessionStorage
+ */
+function saveDesignState() {
+  const mockup = document.querySelector(".mockup");
+  if (!mockup) return null;
+
+  return {
+    width: mockup.style.width,
+    height: mockup.style.height,
+    left: mockup.style.left,
+    top: mockup.style.top,
+  };
+}
+
+/**
+ * Restores the design state from sessionStorage
+ */
+function restoreDesignState() {
+  const savedState = sessionStorage.getItem("druckmeinshirt_design_state");
+  if (!savedState) return false;
+
+  try {
+    const state = JSON.parse(savedState);
+    designState = {
+      scale: state.scale || 1.0,
+      position: state.position || { x: 0, y: 0 },
+      rotation: state.rotation || 0,
+      originalSize: state.originalSize || { width: 0, height: 0 },
+    };
+
+    // Restore product selection if available
+    if (state.productId) {
+      selectedProduct = availableProducts.find((p) => p.id === state.productId);
+      if (selectedProduct) {
+        updateProductDisplay();
+      }
+    }
+
+    // Restore variant and size if available
+    if (state.variantId && selectedProduct) {
+      selectedVariant = selectedProduct.variants.find(
+        (v) => v.id === state.variantId
+      );
+      selectedSize = state.size;
+      if (selectedVariant) {
+        updateVariantDisplay();
+      }
+    }
+
+    // Restore image if available
+    if (state.imageUrl) {
+      selectedImageUrl = state.imageUrl;
+      updateMockupImage(state.imageUrl);
+    }
+
+    // Restore quantity if available
+    if (state.quantity && quantityInput) {
+      quantityInput.value = state.quantity;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Error restoring design state:", error);
+    return false;
+  }
+}
+
+// --- Print Area Constants ---
+const PRINT_AREA = {
+  DPI: 300, // Standard print DPI
+  VISUAL_DPI: 150, // Visual mockup DPI
+  DEFAULT_MARGIN: 10, // Default margin in pixels
+  GUIDE_COLOR: "rgba(255, 0, 0, 0.5)", // Guide visualization color
+};
+
+/**
+ * Creates and updates the print area visualization
+ * @param {Object} placement - Placement data from the product
+ */
+function updatePrintAreaGuides() {
+  if (!mockupImageOverlay || !selectedProduct) return;
+
+  // Find front placement data
+  const frontPlacement = selectedProduct.placements?.find(
+    (p) => p.placement === "front"
+  );
+  if (!frontPlacement) {
+    console.error("Front placement data not found");
+    return;
+  }
+
+  // Remove existing guides
+  const existingGuide = mockupImageOverlay.querySelector(".print-area-guide");
+  if (existingGuide) {
+    existingGuide.remove();
+  }
+
+  // Create print area guide
+  const guide = document.createElement("div");
+  guide.classList.add("print-area-guide");
+
+  // Calculate visual dimensions
+  const visualWidth =
+    (frontPlacement.print_area_width_px / PRINT_AREA.DPI) *
+    PRINT_AREA.VISUAL_DPI;
+  const visualHeight =
+    (frontPlacement.print_area_height_px / PRINT_AREA.DPI) *
+    PRINT_AREA.VISUAL_DPI;
+
+  // Style the guide
+  Object.assign(guide.style, {
+    position: "absolute",
+    width: `${visualWidth}px`,
+    height: `${visualHeight}px`,
+    border: `2px dashed ${PRINT_AREA.GUIDE_COLOR}`,
+    pointerEvents: "none",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+  });
+
+  // Add guide to mockup
+  mockupImageOverlay.appendChild(guide);
+
+  // Update design constraints based on print area
+  DESIGN_CONSTRAINTS.MAX_SIZE_PX = Math.min(
+    visualWidth - 2 * PRINT_AREA.DEFAULT_MARGIN,
+    visualHeight - 2 * PRINT_AREA.DEFAULT_MARGIN
+  );
+}
+
+/**
+ * Validates if the current design fits within the print area
+ * @returns {boolean} True if design fits within constraints
+ */
+function validateDesignPlacement() {
+  if (!designImageContainer || !mockupImageOverlay) return false;
+
+  const guide = mockupImageOverlay.querySelector(".print-area-guide");
+  if (!guide) return false;
+
+  const guideBounds = guide.getBoundingClientRect();
+  const designBounds = designImageContainer.getBoundingClientRect();
+
+  // Check if design fits within print area
+  const fitsWidth =
+    designBounds.width <= guideBounds.width - 2 * PRINT_AREA.DEFAULT_MARGIN;
+  const fitsHeight =
+    designBounds.height <= guideBounds.height - 2 * PRINT_AREA.DEFAULT_MARGIN;
+
+  // Check if design is within print area bounds
+  const withinBounds =
+    designBounds.left >= guideBounds.left + PRINT_AREA.DEFAULT_MARGIN &&
+    designBounds.right <= guideBounds.right - PRINT_AREA.DEFAULT_MARGIN &&
+    designBounds.top >= guideBounds.top + PRINT_AREA.DEFAULT_MARGIN &&
+    designBounds.bottom <= guideBounds.bottom - PRINT_AREA.DEFAULT_MARGIN;
+
+  return fitsWidth && fitsHeight && withinBounds;
+}
+
+/**
+ * Updates the product display and related elements
+ */
+function updateProductDisplay() {
+  if (!selectedProduct) return;
+
+  // Update color swatches
+  displayColorSwatches(selectedProduct);
+
+  // Update print area guides
+  updatePrintAreaGuides();
+
+  // Update size selector
+  if (selectedVariant) {
+    displaySizeSelector(selectedProduct, selectedVariant.color_name);
+  }
+
+  // Update mockup image if available
+  if (selectedImageUrl) {
+    updateMockupImage(selectedImageUrl);
+  }
+
+  // Check design completion
+  checkDesignCompletion();
+}
+
+/**
+ * Updates the design image position with boundary constraints
+ * @param {number} deltaX - Change in X position
+ * @param {number} deltaY - Change in Y position
+ */
+function updateDesignPosition(deltaX, deltaY) {
+  if (!designImageContainer || !mockupImageOverlay) return;
+
+  const guide = mockupImageOverlay.querySelector(".print-area-guide");
+  if (!guide) return;
+
+  const guideBounds = guide.getBoundingClientRect();
+  const imageBounds = designImageContainer.getBoundingClientRect();
+
+  // Calculate new position with print area constraints
+  const newLeft = mockupState.dragStartX + deltaX;
+  const newTop = mockupState.dragStartY + deltaY;
+
+  // Apply print area constraints
+  const maxLeft =
+    guideBounds.right - imageBounds.width - PRINT_AREA.DEFAULT_MARGIN;
+  const maxTop =
+    guideBounds.bottom - imageBounds.height - PRINT_AREA.DEFAULT_MARGIN;
+  const minLeft = guideBounds.left + PRINT_AREA.DEFAULT_MARGIN;
+  const minTop = guideBounds.top + PRINT_AREA.DEFAULT_MARGIN;
+
+  designState.position = {
+    x: Math.max(minLeft, Math.min(maxLeft, newLeft)),
+    y: Math.max(minTop, Math.min(maxTop, newTop)),
+  };
+
+  // Update element position
+  designImageContainer.style.left = `${designState.position.x}px`;
+  designImageContainer.style.top = `${designState.position.y}px`;
+
+  // Save state
+  saveDesignState();
+
+  // Check design completion
+  checkDesignCompletion();
+}
+
+/**
+ * Updates the design image size with constraints
+ * @param {number} width - New width in pixels
+ * @param {number} height - New height in pixels
+ */
+function updateDesignSize(width, height) {
+  if (!designImageContainer) return;
+
+  // Calculate aspect ratio
+  const aspectRatio =
+    designState.originalSize.width / designState.originalSize.height;
+
+  // Constrain size while maintaining aspect ratio
+  let newWidth = Math.max(
+    DESIGN_CONSTRAINTS.MIN_SIZE_PX,
+    Math.min(DESIGN_CONSTRAINTS.MAX_SIZE_PX, width)
+  );
+  let newHeight = newWidth / aspectRatio;
+
+  // Adjust if height exceeds constraints
+  if (
+    newHeight < DESIGN_CONSTRAINTS.MIN_SIZE_PX ||
+    newHeight > DESIGN_CONSTRAINTS.MAX_SIZE_PX
+  ) {
+    newHeight = Math.max(
+      DESIGN_CONSTRAINTS.MIN_SIZE_PX,
+      Math.min(DESIGN_CONSTRAINTS.MAX_SIZE_PX, height)
+    );
+    newWidth = newHeight * aspectRatio;
+  }
+
+  // Update element size
+  designImageContainer.style.width = `${newWidth}px`;
+  designImageContainer.style.height = `${newHeight}px`;
+
+  // Update scale based on original size
+  designState.scale = newWidth / designState.originalSize.width;
+
+  // Update scale slider if available
+  if (imageScaleSlider) {
+    imageScaleSlider.value = designState.scale;
+  }
+
+  // Save state
+  saveDesignState();
+}
+
+/**
+ * Updates the design image scale
+ * @param {number} scale - New scale factor
+ */
+function updateDesignScale(scale) {
+  if (!designImageContainer || !designState.originalSize.width) return;
+
+  // Constrain scale
+  const newScale = Math.max(
+    DESIGN_CONSTRAINTS.MIN_SCALE,
+    Math.min(DESIGN_CONSTRAINTS.MAX_SCALE, scale)
+  );
+
+  // Calculate new dimensions
+  const newWidth = designState.originalSize.width * newScale;
+  const newHeight = designState.originalSize.height * newScale;
+
+  // Update size
+  updateDesignSize(newWidth, newHeight);
+}
+
+/**
+ * Updates the mockup image with the selected design
+ * @param {string} imageUrl - URL of the design image
+ */
+function updateMockupImage(imageUrl) {
+  if (!designImageContainer || !imageUrl) return;
+
+  // Create new image to get original dimensions
+  const img = new Image();
+  img.onload = () => {
+    // Store original size
+    designState.originalSize = {
+      width: img.width,
+      height: img.height,
+    };
+
+    // Create design image element
+    designImageContainer.innerHTML = `
+      <img src="${imageUrl}" alt="Design" style="width: 100%; height: 100%;">
+      <div class="resize-handle"></div>
+    `;
+
+    // Reset position and scale
+    designState.position = {
+      x: DESIGN_CONSTRAINTS.POSITION_MARGIN,
+      y: DESIGN_CONSTRAINTS.POSITION_MARGIN,
+    };
+    designState.scale = 1.0;
+
+    // Apply initial position and size
+    designImageContainer.style.left = `${designState.position.x}px`;
+    designImageContainer.style.top = `${designState.position.y}px`;
+    updateDesignSize(img.width, img.height);
+
+    // Show design container
+    designImageContainer.style.display = "block";
+
+    // Save state
+    saveDesignState();
+
+    // Update completion status
+    checkDesignCompletion();
+  };
+  img.src = imageUrl;
+}
 
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", async () => {
@@ -434,17 +800,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   // Mockup Interaction Listeners
   if (designImageContainer) {
-    designImageContainer.addEventListener("mousedown", startDragging);
+    designImageContainer.addEventListener("mousedown", handleMouseDown);
     const resizeHandle = designImageContainer.querySelector(".resize-handle");
     if (resizeHandle) {
-      resizeHandle.addEventListener("mousedown", startResizing);
+      resizeHandle.addEventListener("mousedown", handleMouseDown);
     }
   }
   if (imageScaleSlider) {
     imageScaleSlider.addEventListener("input", handleScaleSlider);
   }
-  document.addEventListener("mousemove", handleDraggingOrResizing);
-  document.addEventListener("mouseup", stopDraggingOrResizing);
+  document.addEventListener("mousemove", handleMouseMove);
+  document.addEventListener("mouseup", handleMouseUp);
 
   // Initial Token Balance Check
   fetchAndDisplayTokenBalance();
@@ -452,6 +818,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Show initial section (design)
   showSection("design-section");
+
+  // Restore design state if available
+  restoreDesignState();
 });
 
 // --- Helper Functions ---
@@ -831,19 +1200,32 @@ function checkDesignCompletion() {
     selectedVariant && // Includes color
     selectedSize &&
     selectedImageUrl &&
-    quantityInput.value >= 1;
+    quantityInput?.value >= 1 &&
+    validateDesignPlacement(); // Add placement validation
 
   if (proceedToCheckoutButton) {
     proceedToCheckoutButton.disabled = !isComplete;
+
+    let message = "";
+    if (!isComplete) {
+      if (!validateDesignPlacement()) {
+        message = "Design muss innerhalb des Druckbereichs liegen.";
+      } else {
+        message =
+          "Bitte vervollständige dein Design (Produkt, Farbe, Größe, Bild, Menge).";
+      }
+    } else {
+      message = "Design bereit für Checkout.";
+    }
+
     displayMessage(
       document.getElementById("design-status"),
-      isComplete
-        ? "Design bereit für Checkout."
-        : "Bitte vervollständige dein Design (Produkt, Farbe, Größe, Bild, Menge).",
+      message,
       isComplete ? "success" : "info"
     );
   }
-  return isComplete; // Return status for other functions
+
+  return isComplete;
 }
 
 function showSection(sectionId) {
@@ -1291,37 +1673,44 @@ async function handleSubmitTshirtOrder() {
 
 // --- Mockup Interaction Logic ---
 
-function startDragging(e) {
-  // Prevent default only for the image container itself, not handles
-  if (e.target === designImageContainer) {
+function handleMouseDown(e) {
+  const designImageContainer = document.querySelector(
+    ".design-image-container"
+  );
+  if (e.target.classList.contains("resize-handle")) {
     e.preventDefault();
-    isDragging = true;
+    e.stopPropagation();
+    mockupState.isResizing = true;
+    mockupState.resizeStartX = e.clientX;
+    mockupState.resizeStartY = e.clientY;
+    mockupState.imageStartWidth = designImageContainer.offsetWidth;
+    mockupState.imageStartHeight = designImageContainer.offsetHeight;
+  } else if (e.target === designImageContainer) {
+    e.preventDefault();
+    mockupState.isDragging = true;
     designImageContainer.style.cursor = "grabbing";
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    imageStartLeft = designImageContainer.offsetLeft;
-    imageStartTop = designImageContainer.offsetTop;
+    mockupState.dragStartX = e.clientX;
+    mockupState.dragStartY = e.clientY;
+    mockupState.imageStartLeft = designImageContainer.offsetLeft;
+    mockupState.imageStartTop = designImageContainer.offsetTop;
   }
 }
 
-function startResizing(e) {
-  e.preventDefault();
-  e.stopPropagation(); // Prevent triggering drag on the container
-  isResizing = true;
-  resizeStartX = e.clientX;
-  resizeStartY = e.clientY;
-  imageStartWidth = designImageContainer.offsetWidth;
-}
-
-function handleDraggingOrResizing(e) {
-  if (!isDragging && !isResizing) return;
+function handleMouseMove(e) {
+  if (!mockupState.isDragging && !mockupState.isResizing) return;
 
   const mockup = document.getElementById("mockup-container");
-  if (!mockup) return;
+  const designImageContainer = document.querySelector(
+    ".design-image-container"
+  );
+  if (!mockup || !designImageContainer) return;
 
-  if (isDragging) {
-    const newX = e.clientX - dragStartX;
-    const newY = e.clientY - dragStartY;
+  if (mockupState.isDragging) {
+    const deltaX = e.clientX - mockupState.dragStartX;
+    const deltaY = e.clientY - mockupState.dragStartY;
+    const newX = mockupState.imageStartLeft + deltaX;
+    const newY = mockupState.imageStartTop + deltaY;
+
     updateDesignPosition(newX, newY);
     handleDesignCustomization("drag", {
       position_x: newX,
@@ -1329,9 +1718,12 @@ function handleDraggingOrResizing(e) {
     });
   }
 
-  if (isResizing) {
-    const newWidth = Math.max(50, e.clientX - resizeStartX);
-    const newHeight = Math.max(50, e.clientY - resizeStartY);
+  if (mockupState.isResizing) {
+    const deltaX = e.clientX - mockupState.resizeStartX;
+    const deltaY = e.clientY - mockupState.resizeStartY;
+    const newWidth = Math.max(50, mockupState.imageStartWidth + deltaX);
+    const newHeight = Math.max(50, mockupState.imageStartHeight + deltaY);
+
     updateDesignSize(newWidth, newHeight);
     handleDesignCustomization("resize", {
       width: newWidth,
@@ -1340,14 +1732,19 @@ function handleDraggingOrResizing(e) {
   }
 }
 
-function stopDraggingOrResizing() {
-  if (isDragging) {
-    isDragging = false;
-    designImageContainer.style.cursor = "grab";
+function handleMouseUp() {
+  const designImageContainer = document.querySelector(
+    ".design-image-container"
+  );
+  if (mockupState.isDragging) {
+    mockupState.isDragging = false;
+    if (designImageContainer) {
+      designImageContainer.style.cursor = "grab";
+    }
     checkDesignCompletion(); // Placement might affect completion
   }
-  if (isResizing) {
-    isResizing = false;
+  if (mockupState.isResizing) {
+    mockupState.isResizing = false;
     checkDesignCompletion(); // Size might affect completion
   }
 }
@@ -1411,30 +1808,39 @@ function displayProducts(products) {
   productListDiv.innerHTML = ""; // Clear existing
   if (!products || products.length === 0) {
     productListDiv.innerHTML =
-      "<p>Keine Produkte gefunden oder Fehler beim Laden.</p>"; // More informative message
+      "<p>Keine Produkte gefunden oder Fehler beim Laden.</p>";
     return;
   }
   products.forEach((product) => {
     const productDiv = document.createElement("div");
-    // Use card style if appropriate, or keep specific class
-    productDiv.classList.add("product-item", "card"); // Assuming card style is suitable
+    productDiv.classList.add("product-item", "card");
     productDiv.dataset.productId = product.id;
+
+    // Create a placeholder SVG as a data URL
+    const placeholderSvg = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">
+        <rect width="50" height="50" fill="#eee"/>
+        <text x="50%" y="50%" font-family="Arial" font-size="8" fill="#aaa" text-anchor="middle" dy=".3em">No Image</text>
+      </svg>
+    `)}`;
 
     // Safely get the image URL
     const imageUrl = product.default_image_url;
     let imageHtml = "";
-    if (imageUrl) {
-      // Only add image tag if URL exists
-      imageHtml = `<img src="${imageUrl}" alt="${product.name}" style="width: 50px; height: auto; margin-right: 10px; vertical-align: middle; border-radius: 3px;">`;
-    } else {
-      // Optional: Add a placeholder box or icon if no image
-      imageHtml = `<span style="display: inline-block; width: 50px; height: 50px; background-color: #eee; margin-right: 10px; vertical-align: middle; text-align: center; line-height: 50px; font-size: 10px; color: #aaa; border-radius: 3px;">No Img</span>`;
-    }
+
+    // Create image element with error handling
+    imageHtml = `<img 
+      src="${imageUrl || placeholderSvg}" 
+      alt="${product.name}" 
+      style="width: 50px; height: 50px; object-fit: cover; margin-right: 10px; vertical-align: middle; border-radius: 3px;"
+      onerror="this.onerror=null; this.src='${placeholderSvg}';"
+    >`;
 
     productDiv.innerHTML = `
-            ${imageHtml}
-            <span>${product.name}</span>
-        `;
+      ${imageHtml}
+      <span>${product.name}</span>
+    `;
+
     productDiv.addEventListener("click", handleProductSelection);
     productListDiv.appendChild(productDiv);
   });
@@ -1857,3 +2263,121 @@ function handleDesignCustomization(type, properties = {}) {
     ...properties,
   });
 }
+
+function initializeDesignControls() {
+  const designContainer = document.querySelector(".design-container");
+  const selectedDesign = document.getElementById("selected-design");
+  const rotateLeftBtn = document.getElementById("rotate-left");
+  const rotateRightBtn = document.getElementById("rotate-right");
+  const resetPositionBtn = document.getElementById("reset-position");
+
+  // Design interaction state
+  let currentRotation = 0;
+  let currentPosition = { x: 0, y: 0 };
+  let isDragging = false;
+  let dragStart = { x: 0, y: 0 };
+
+  function startDragging(e) {
+    if (!e.target.closest(".design-container")) return;
+    isDragging = true;
+    dragStart = {
+      x: e.clientX - currentPosition.x,
+      y: e.clientY - currentPosition.y,
+    };
+  }
+
+  function handleDragging(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+
+    currentPosition = {
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    };
+
+    updateDesignTransform();
+  }
+
+  function stopDragging() {
+    isDragging = false;
+  }
+
+  // Rotation controls
+  rotateLeftBtn.addEventListener("click", () => {
+    currentRotation = (currentRotation - 90) % 360;
+    updateDesignTransform();
+  });
+
+  rotateRightBtn.addEventListener("click", () => {
+    currentRotation = (currentRotation + 90) % 360;
+    updateDesignTransform();
+  });
+
+  resetPositionBtn.addEventListener("click", () => {
+    currentRotation = 0;
+    currentPosition = { x: 0, y: 0 };
+    updateDesignTransform();
+  });
+
+  // Drag functionality
+  designContainer.addEventListener("mousedown", startDragging);
+  document.addEventListener("mousemove", handleDragging);
+  document.addEventListener("mouseup", stopDragging);
+
+  // Touch support for design container
+  designContainer.addEventListener("touchstart", handleTouchStart);
+  document.addEventListener("touchmove", handleTouchMove);
+  document.addEventListener("touchend", handleTouchEnd);
+
+  function updateDesignTransform() {
+    if (!selectedDesign) return;
+    selectedDesign.style.transform = `
+      translate(${currentPosition.x}px, ${currentPosition.y}px)
+      rotate(${currentRotation}deg)
+    `;
+  }
+}
+
+function handleTouchStart(e) {
+  if (!e.target.closest(".design-container")) return;
+  const touch = e.touches[0];
+  isDragging = true;
+  dragStart = {
+    x: touch.clientX - currentPosition.x,
+    y: touch.clientY - currentPosition.y,
+  };
+}
+
+function handleTouchMove(e) {
+  if (!isDragging) return;
+  e.preventDefault();
+
+  const touch = e.touches[0];
+  currentPosition = {
+    x: touch.clientX - dragStart.x,
+    y: touch.clientY - dragStart.y,
+  };
+
+  updateDesignTransform();
+}
+
+function handleTouchEnd() {
+  isDragging = false;
+}
+
+// Update the displaySelectedImage function to work with the new design container
+function displaySelectedImage(imageUrl) {
+  const selectedDesign = document.getElementById("selected-design");
+  selectedDesign.src = imageUrl;
+  selectedDesign.style.display = "block";
+
+  // Reset position and rotation
+  currentRotation = 0;
+  currentPosition = { x: 0, y: 0 };
+  updateDesignTransform();
+}
+
+// Initialize design controls when the page loads
+document.addEventListener("DOMContentLoaded", () => {
+  initializeDesignControls();
+});
