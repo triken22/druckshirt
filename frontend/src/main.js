@@ -198,7 +198,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     posthog.init(POSTHOG_API_KEY, {
       api_host: POSTHOG_HOST_URL,
       // TODO: Implement user opt-out check here if needed
-      loaded: function (posthog) {
+      loaded: (posthog) => {
         if (userHasOptedOut()) {
           posthog.opt_out_capturing();
         }
@@ -803,7 +803,7 @@ function handleProductSelection(event) {
   const targetItem = event.target.closest(".product-item");
   if (!targetItem || !targetItem.dataset.productId) return;
 
-  const productId = parseInt(targetItem.dataset.productId, 10);
+  const productId = Number.parseInt(targetItem.dataset.productId, 10);
   selectedProduct = availableProducts.find((p) => p.id === productId);
 
   if (selectedProduct) {
@@ -919,7 +919,7 @@ function handleColorSelection(event) {
       // Final fallback: use selected color code AND clear image
       // This might be less ideal than showing the default placeholder again?
       // Let's try reverting to placeholder if no other images found.
-      const placeholderUrl = "./src/assets/placeholder-tshirt.png"; // Ensure path is correct
+      const placeholderUrl = "placeholder-tshirt.png"; // Ensure path is correct
       mockupBg.style.backgroundImage = `url('${placeholderUrl}')`;
       mockupBg.style.backgroundColor = colorCode; // Keep color hint
       console.log(
@@ -1053,16 +1053,16 @@ function getPlacementData() {
         url: selectedImageUrl,
         position: {
           // Print area dimensions in INCHES
-          area_width: parseFloat(area_width_inches.toFixed(4)),
-          area_height: parseFloat(area_height_inches.toFixed(4)),
+          area_width: Number.parseFloat(area_width_inches.toFixed(4)),
+          area_height: Number.parseFloat(area_height_inches.toFixed(4)),
 
           // Design dimensions in INCHES
-          width: parseFloat(design_width_inches.toFixed(4)),
-          height: parseFloat(design_height_inches.toFixed(4)),
+          width: Number.parseFloat(design_width_inches.toFixed(4)),
+          height: Number.parseFloat(design_height_inches.toFixed(4)),
 
           // Design offset in INCHES from top-left of print area
-          top: parseFloat(design_top_inches.toFixed(4)),
-          left: parseFloat(design_left_inches.toFixed(4)),
+          top: Number.parseFloat(design_top_inches.toFixed(4)),
+          left: Number.parseFloat(design_left_inches.toFixed(4)),
         },
       },
     ],
@@ -1214,7 +1214,7 @@ async function handleGetShippingOptions() {
   const items = [
     {
       catalog_variant_id: selectedVariant.id,
-      quantity: parseInt(quantityInput.value, 10),
+      quantity: Number.parseInt(quantityInput.value, 10),
     },
   ];
 
@@ -1343,7 +1343,7 @@ async function initiateTshirtPayment() {
     items: [
       {
         catalog_variant_id: selectedVariant.id,
-        quantity: parseInt(quantityInput.value, 10),
+        quantity: Number.parseInt(quantityInput.value, 10),
         design_url: selectedImageUrl,
         placement: placement, // Include calculated placement
       },
@@ -1555,8 +1555,8 @@ function handleDraggingOrResizing(e) {
     designImageContainer.style.width = `${newWidth}px`;
 
     // Update slider to reflect manual resize
-    const maxSlider = parseFloat(imageScaleSlider.max);
-    const minSlider = parseFloat(imageScaleSlider.min);
+    const maxSlider = Number.parseFloat(imageScaleSlider.max);
+    const minSlider = Number.parseFloat(imageScaleSlider.min);
     const initialWidthRatio = 0.4;
     const currentWidthRatio = newWidth / parentWidth;
     const sliderValue = currentWidthRatio / initialWidthRatio;
@@ -1582,7 +1582,7 @@ function stopDraggingOrResizing() {
 
 function handleScaleSlider() {
   if (!imageScaleSlider || !designImageContainer) return;
-  const scaleValue = parseFloat(imageScaleSlider.value);
+  const scaleValue = Number.parseFloat(imageScaleSlider.value);
   const initialWidthPercent = 40; // The initial width set in CSS/HTML
   const newWidthPercent = initialWidthPercent * scaleValue;
   designImageContainer.style.width = `${newWidthPercent}%`;

@@ -310,4 +310,183 @@ Automate build, testing, and deployment for frontend (Pages) and backend (Worker
 
 ## 8. Post-Deployment
 *   **Monitoring:** Rely on existing monitoring strategy (metrics, logging, alerting) to verify deployment health. Manual rollback if issues detected.
-*   **(Optional) Smoke Tests:** Minimal automated checks post-deployment. 
+*   **(Optional) Smoke Tests:** Minimal automated checks post-deployment.
+
+# Frontend Development Guide: DruckMeinShirt
+
+## 1. Overview
+
+**Goal:** Create a responsive, intuitive web application for the German market (DACH region) enabling users to:
+    1. Upload their own images (PNG/JPEG).
+    2. Purchase AI image generation tokens via Stripe.
+    3. Generate images using AI (via x.ai/Grok API, proxied by the backend) by spending tokens.
+    4. Design T-shirts by placing uploaded or AI-generated images onto mockups.
+    5. Customize T-shirt color, size, and quantity.
+    6. Order printed T-shirts via Stripe, with fulfillment handled by Printful (via backend).
+    7. Recover lost token Grant IDs via email.
+
+**Key Constraint:** NO traditional user accounts. Token access is managed via a unique `grant_id` stored client-side and emailed to the user upon purchase. Order status communication relies on email.
+
+**Target Audience:** German-speaking users interested in personalized apparel.
+
+## 2. Architecture
+
+*   **Framework/Library:** Pure HTML, CSS, and JavaScript (Vanilla JS preferred for simplicity and performance, but a micro-framework like Alpine.js or petite-vue could be considered if deemed necessary for managing component state efficiently). Avoid heavy frameworks unless absolutely justified.
+*   **Styling:** Use modern CSS. Maintain a clean, user-friendly, and responsive design. Consider CSS variables for theming (e.g., colors). Ensure responsiveness across common desktop and mobile viewport sizes.
+*   **State Management:** Primarily client-side.
+    *   **`grant_id`:** Store securely in `localStorage`. This is the key to accessing purchased tokens.
+    *   **Design State:** Keep the current T-shirt design configuration (selected product, variant, color, size, quantity, image URL, image placement/transformations) in memory within relevant components/scopes, or use `sessionStorage` if persistence across page refreshes *before* checkout is desired. Clear this state after an order or when the user starts a new design.
+    *   **Token Balance:** Fetch on load (if `grant_id` exists) and update after generation/purchase. Display prominently.
+*   **API Interaction:** The frontend interacts *exclusively* with the backend Cloudflare Worker API Gateway deployed at `/api/...`. All external service calls (Stripe, x.ai, Printful, Resend) are handled by the backend.
+*   **Key Libraries:**
+    *   **Stripe.js / Stripe Elements:** Required for securely collecting payment information for both token purchases and T-shirt orders.
+    *   **PostHog.js:** For tracking user behavior and analytics (see Section 8).
+    *   *(Optional)* A library for interactive image manipulation on the T-shirt mockup (e.g., Fabric.js, Konva.js, or simpler custom drag/resize logic). Choose based on complexity needs.
+
+## 3. Core User Flows & UI Components
+
+**(High-Level - Details below)**
+
+*   **Landing/Main Page:** Introduction, showcase examples, clear Calls-to-Action (Start Designing, Buy Tokens). Header/Footer with navigation (Design, Buy Tokens, Grant ID Recovery, Impressum, Datenschutz).
+*   **Design Interface:**
+    *   Product Selection: Display available T-shirts (fetched from backend).
+    *   Color Selection: Swatches based on selected product's availability.
+    *   Image Source Selection: Buttons/Tabs for "Upload Image" or "Generate with AI".
+    *   Image Upload Component: File input (accept `.png`, `.jpg`, `.jpeg`), client-side validation (optional: size limit check), upload progress (optional), display area for uploaded image.
+    *   AI Generation Component: Text input for prompt, "Generate" button (disabled if no `grant_id` or zero tokens), display token cost, loading indicator, area to display multiple generated image results (e.g., grid), selection mechanism for the desired image.
+    *   Mockup Area: Display selected T-shirt color with the chosen image overlaid. Interactive controls for resizing and repositioning the image within defined printable areas.
+    *   Customization Options: Size selection (dropdown/buttons), Quantity input.
+    *   Order Summary: Display configured item, price (TBD - likely calculated at checkout), "Add to Order/Checkout" button.
+*   **Token Purchase:**
+    *   Display Token Bundles (e.g., 10 tokens for €X).
+    *   Button/Modal to initiate purchase -> Email input field.
+    *   Stripe Payment Element integration for payment details.
+    *   Display success/error messages. On success, clearly display the received `grant_id` and instruct the user to save it, mentioning it will also be emailed. Store `grant_id` in `localStorage`.
+*   **Checkout Process:**
+    *   Order Summary display.
+    *   Shipping Address Form (standard fields: name, street, city, zip, country - ensure DACH focus but allow relevant EU countries if supported by Printful). Email address required.
+    *   Shipping Options Display (fetched from backend based on address/items). Allow selection.
+    *   Price Breakdown (Items, Shipping, Total).
+    *   Stripe Payment Element integration for payment details.
+    *   Order Confirmation Page: Thank you message, order summary (no specific order ID needed from frontend perspective), note about confirmation email.
+*   **Grant ID Recovery:**
+    *   Simple page/modal with an email input field.
+    *   Button to submit request.
+    *   Display generic confirmation message ("If a matching purchase exists, recovery instructions will be sent...").
+*   **Token Balance Display:** Component (likely in header or near AI generation) showing "Tokens: X" fetched via `/api/get-token-balance`. Updates dynamically.
+
+## 4. State Management Details
+
+*   **`grant_id`:**
+    *   On app load, check `localStorage` for an existing `grant_id`.
+    *   If found, fetch and display the token balance using `/api/get-token-balance`.
+    *   When a token purchase is successful (`/api/stripe/create-token-purchase-intent` response), store the received `grant_id` in `localStorage`.
+    *   Pass the `grant_id` from `localStorage` in the request body for `/api/generate-image` and as a query parameter for `/api/get-token-balance`.
+*   **Design Configuration:**
+    *   Store the selected product details (Printful product ID).
+    *   Store the selected variant details (Printful catalog variant ID, color name/code, size).
+    *   Store the image URL (either from R2 upload or selected x.ai result).
+    *   Store image transformations (position x/y, scale/size) applied on the mockup.
+    *   Store quantity.
+    *   This state lives temporarily during the design process. It's passed to the backend during the shipping options request and the T-shirt payment intent creation.
+
+## 5. API Interaction Details
+
+Handle all API calls asynchronously (e.g., using `async/await` with `fetch`). Provide user feedback during calls (loading states, disabling buttons). Handle errors gracefully, displaying user-friendly messages.
+
+*   **`POST /api/upload-image`**
+    *   **Purpose:** Upload user's image file.
+    *   **Request:** `FormData` object containing the image `File` under the key `image`.
+    *   **Success (200):** `JSON { imageUrl: string }` (URL of the image now in R2).
+    *   **Error:** 400 (missing/invalid file), 500 (upload failure).
+*   **`POST /api/generate-image`**
+    *   **Purpose:** Generate images using AI based on prompt and tokens.
+    *   **Request:** `JSON { prompt: string, grant_id: string }` (Get `grant_id` from `localStorage`).
+    *   **Success (200):** `JSON { images: string[] }` (Array of URLs for generated images).
+    *   **Error:** 400 (invalid input/`grant_id`), **402 (Insufficient tokens - handle specifically)**, 500 (KV/API error).
+*   **`GET /api/printful/products`**
+    *   **Purpose:** Fetch available T-shirt products for selection.
+    *   **Request:** GET request (no body). Can add query params like `?category=tshirts` if needed/supported by backend.
+    *   **Success (200):** `JSON { products: object[] }` (Array of simplified product details).
+    *   **Error:** 500 (Printful/KV error).
+*   **`POST /api/printful/shipping-options`**
+    *   **Purpose:** Get shipping costs based on items and destination.
+    *   **Request:** `JSON { recipient: { address: { country_code: string, zip: string, ... } }, items: [{ quantity: number, catalog_variant_id: number }] }`. Match backend schema (`PrintfulShippingRequestSchema`).
+    *   **Success (200):** `JSON { shipping_options: object[] }` (Array of options with ID, rate, etc.).
+    *   **Error:** 400 (invalid address/items), 500 (Printful error).
+*   **`POST /api/stripe/create-token-purchase-intent`**
+    *   **Purpose:** Initiate payment flow for buying tokens.
+    *   **Request:** `JSON { bundle_id: string, email: string }`.
+    *   **Success (200):** `JSON { client_secret: string, grant_id: string }`. **Use `client_secret` with Stripe.js. Store `grant_id` in `localStorage`.**
+    *   **Error:** 400 (invalid input), 500 (Stripe error).
+*   **`POST /api/stripe/create-tshirt-order-intent`**
+    *   **Purpose:** Initiate payment flow for ordering the designed T-shirt.
+    *   **Request:** `JSON { order_details: { items: [{ catalog_variant_id: number, quantity: number, design_url: string, placement: {...} }], shipping_address: { name: string, address1: string, city: string, zip: string, country_code: string, email: string, ... }, shipping_option_id: string } }`. Ensure structure matches backend expectations derived from Printful needs and includes design URL and placement details.
+    *   **Success (200):** `JSON { client_secret: string }`. **Use `client_secret` with Stripe.js.**
+    *   **Error:** 400 (invalid order details), 500 (KV/Stripe error).
+*   **`GET /api/get-token-balance`**
+    *   **Purpose:** Check current token balance for a user.
+    *   **Request:** GET request with query parameter `?grant_id=UNIQUE_GRANT_ID` (Get `grant_id` from `localStorage`).
+    *   **Success (200):** `JSON { tokens_remaining: number }`.
+    *   **Error:** 400 (missing `grant_id`), 404 (invalid `grant_id` - treat as 0 tokens), 500 (KV error).
+*   **`POST /api/recover-grant-id`**
+    *   **Purpose:** Request Grant ID(s) associated with an email.
+    *   **Request:** `JSON { email: string }`.
+    *   **Success (200):** `JSON { message: string }` (Display this generic message to the user).
+    *   **Error:** 400 (invalid email), 500 (Stripe/Resend error - show generic failure message).
+
+## 6. Key UI/UX Requirements
+
+*   **Simplicity & Intuitiveness:** Guide the user smoothly through each step (upload/generate -> design -> checkout). Minimize clicks and cognitive load.
+*   **Clarity on `grant_id`:**
+    *   Upon token purchase success, clearly display the `grant_id` and strongly advise the user to copy and save it securely.
+    *   Explain that the `grant_id` is needed to use tokens on other devices or after clearing browser data.
+    *   Provide an easy-to-find link/section for the Grant ID Recovery process.
+*   **Visual Feedback:** Use loading indicators for API calls, image uploads, and AI generation. Provide clear success and error messages.
+*   **Responsiveness:** Ensure the layout adapts gracefully to various screen sizes (mobile, tablet, desktop).
+*   **Accessibility:** **Target WCAG 2.1 Level AA compliance.** This includes:
+    *   Semantic HTML structure.
+    *   Keyboard navigability for all interactive elements.
+    *   Sufficient color contrast.
+    *   Alternative text for images (including mockups where appropriate).
+    *   ARIA attributes where necessary to clarify roles and states.
+    *   Proper form labels and error handling.
+*   **Performance:** Optimize image loading and JavaScript execution for fast load times.
+
+## 7. Styling
+
+*   **Aesthetic:** Modern, clean, visually appealing. Reflects a creative/design-oriented service.
+*   **Consistency:** Maintain consistent use of colors, typography, spacing, and component styles throughout the application.
+*   **Responsiveness:** Use mobile-first approach or media queries to ensure usability on all devices.
+
+## 8. Analytics (PostHog)
+
+*   **Integration:** Initialize `posthog-js` early in the application lifecycle using the provided API Key and Host URL (passed via environment variables or similar).
+*   **User Identification:** Rely on PostHog's automatic anonymous ID. Include `grant_id` or `stripe_customer_id` (if available from backend responses like token purchase) as *properties* in relevant events for potential cross-session analysis.
+*   **Event Tracking:** Implement tracking for *at least* the following custom frontend events (use `posthog.capture('event_name', { properties });`):
+    *   `image_uploaded` (properties: `file_type`, `file_size`)
+    *   `ai_prompt_submitted`
+    *   `ai_image_selected` (properties: selected_image_url)
+    *   `tshirt_color_selected` (properties: `product_id`, `color`)
+    *   `tshirt_size_selected` (properties: `product_id`, `size`)
+    *   `image_manipulated` (e.g., resized, repositioned)
+    *   `design_finalized` (properties: `product_id`, `color`, `size`, `quantity`)
+    *   `token_purchase_initiated` (properties: `bundle_id`)
+    *   `checkout_started`
+    *   `shipping_option_selected` (properties: `service_name`, `rate`)
+    *   `payment_initiated` (properties: `purchase_type` ["tokens" or "tshirt"])
+    *   `grant_id_recovery_requested`
+*   **Compliance:**
+    *   Implement a clear user opt-out mechanism using `posthog.opt_out_capturing()`. Link this to the consent management / cookie banner.
+    *   Ensure the Privacy Policy (`Datenschutz`) accurately reflects PostHog usage.
+
+## 9. Legal Pages
+
+*   Ensure dedicated, easily accessible pages for:
+    *   `Impressum` (Legal Disclosure)
+    *   `Datenschutz` (Privacy Policy - must detail data handling for uploads, AI prompts, orders, KV, R2, Stripe, Printful, Resend, PostHog, Grant ID storage/recovery, etc.)
+*   The content for these pages needs to be legally compliant for the German market (GDPR, TMG).
+
+## 10. Build & Deployment
+
+*   The frontend application will be built and deployed via Cloudflare Pages, triggered by pushes to the relevant Git branches (e.g., `develop` -> staging, `main` -> production) using GitHub Actions, as previously configured. 
