@@ -15,9 +15,11 @@ console.log("DruckMeinShirt frontend loaded!");
 // Configuration (Replace with your actual keys or use environment variables)
 // TODO: Replace with your actual Stripe Publishable Key
 const STRIPE_PUBLISHABLE_KEY = "pk_test_YOUR_KEY_HERE";
-// TODO: Set up PostHog integration properly in later phase
-// const POSTHOG_API_KEY = 'phc_YOUR_KEY_HERE';
-// const POSTHOG_HOST_URL = 'https://app.posthog.com';
+// --- PostHog Config ---
+// TODO: Replace with environment variables injected during build/deployment
+const POSTHOG_API_KEY = null; // Set via env: e.g., import.meta.env.VITE_POSTHOG_API_KEY
+const POSTHOG_HOST_URL = "https://app.posthog.com"; // Or your self-hosted instance
+// --- End PostHog Config ---
 
 // Constants
 const API_BASE_URL = "/api"; // Assuming backend is served from the same origin
@@ -93,6 +95,13 @@ let isResizing = false;
 let resizeStartX, resizeStartY;
 let imageStartWidth, imageStartHeight;
 
+// --- PostHog Import & Config ---
+// Remove JS import - handled by snippet
+// Remove placeholder config vars - handled by snippet
+
+// --- DOM Elements ---
+let posthogOptOutToggle;
+
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", async () => {
   // Select DOM Elements
@@ -161,6 +170,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   imageScaleSlider = document.getElementById("image-scale-slider");
   navButtons = document.querySelectorAll(".nav-button");
 
+  posthogOptOutToggle = document.getElementById("posthog-opt-out-toggle");
+
   // Initialize Stripe
   if (STRIPE_PUBLISHABLE_KEY === "pk_test_YOUR_KEY_HERE") {
     console.warn(
@@ -179,9 +190,39 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Initialize PostHog (Optional - Placeholder for now)
-  // if (POSTHOG_API_KEY !== 'phc_YOUR_KEY_HERE') {
-  //     posthog.init(POSTHOG_API_KEY, { api_host: POSTHOG_HOST_URL });
-  // }
+  if (POSTHOG_API_KEY) {
+    posthog.init(POSTHOG_API_KEY, {
+      api_host: POSTHOG_HOST_URL,
+      // TODO: Implement user opt-out check here if needed
+      // loaded: function(posthog) { if (userHasOptedOut()) { posthog.opt_out_capturing(); } }
+    });
+    console.log("PostHog initialized.");
+  } else {
+    console.warn("PostHog API Key not set. Analytics disabled.");
+  }
+
+  // --- PostHog Opt-Out Handling ---
+  // Check initial opt-out state AFTER PostHog is loaded (snippet handles init)
+  // Use a small delay or a more robust check if needed
+  setTimeout(() => {
+    if (
+      window.posthog &&
+      typeof window.posthog.has_opted_out_capturing === "function"
+    ) {
+      const hasOptedOut = window.posthog.has_opted_out_capturing();
+      posthogOptOutToggle.checked = hasOptedOut;
+      console.log("Initial PostHog opt-out state:", hasOptedOut);
+    } else {
+      console.warn("PostHog not fully loaded yet for opt-out check.");
+      // Optionally retry check later
+    }
+  }, 500); // Delay slightly to ensure snippet has likely run
+
+  // Add listener for the toggle
+  if (posthogOptOutToggle) {
+    posthogOptOutToggle.addEventListener("change", handlePostHogOptOutToggle);
+  }
+  // --- End PostHog Opt-Out ---
 
   // Add Event Listeners
   if (imageUploadButton) {
@@ -296,6 +337,21 @@ function saveTokenGrantId(grantId) {
   localStorage.setItem("druckmeinshirt_grant_id", grantId);
 }
 
+// --- PostHog Opt-Out Handler ---
+function handlePostHogOptOutToggle() {
+  if (!window.posthog) {
+    console.error("PostHog is not available.");
+    return;
+  }
+  if (posthogOptOutToggle.checked) {
+    window.posthog.opt_out_capturing();
+    console.log("PostHog capturing opted OUT.");
+  } else {
+    window.posthog.opt_in_capturing();
+    console.log("PostHog capturing opted IN.");
+  }
+}
+
 // --- Core Logic ---
 async function fetchAndDisplayTokenBalance() {
   const grantId = getTokenGrantId();
@@ -368,7 +424,13 @@ async function handleUseUploadedImage() {
         "Upload erfolgreich! Bild wird in Vorschau geladen.",
         "success"
       );
-      updateMockupImage(data.imageUrl); // Use the uploaded image URL
+      updateMockupImage(data.imageUrl);
+      // --- PostHog Event ---
+      if (window.posthog)
+        window.posthog.capture("image_uploaded", {
+          file_type: file.type,
+          file_size: file.size,
+        });
     })
     .catch((error) => {
       console.error("Error uploading image:", error);
@@ -439,6 +501,11 @@ async function initiateTokenPurchase() {
       "info"
     );
     submitPaymentButton.style.display = "block"; // Show payment button
+    // --- PostHog Event ---
+    if (window.posthog)
+      window.posthog.capture("token_purchase_initiated", {
+        bundle_id: TOKEN_BUNDLE_ID,
+      });
   } catch (error) {
     console.error("Error initiating token purchase:", error);
     displayMessage(paymentMessage, `Fehler: ${error.message}`, "error");
@@ -500,7 +567,12 @@ async function handleTokenPaymentSubmit() {
       submitPaymentButton.style.display = "none"; // Hide payment button
       if (paymentElement) paymentElement.destroy(); // Clean up element
       paymentElementContainer.innerHTML = ""; // Clear container
-      // posthog.capture('token_purchase_completed', { bundle_id: TOKEN_BUNDLE_ID, grant_id: currentGrantId });
+      // --- PostHog Event ---
+      if (window.posthog)
+        window.posthog.capture("token_purchase_completed", {
+          bundle_id: TOKEN_BUNDLE_ID,
+          grant_id: currentGrantId,
+        });
     } else if (paymentIntent.status === "requires_action") {
       displayMessage(
         paymentMessage,
@@ -589,6 +661,12 @@ async function handleAiGenerate() {
   aiResultsGrid.innerHTML = ""; // Clear previous results
   imagePreviewAi.innerHTML = ""; // Clear selection preview
 
+  // --- PostHog Event ---
+  if (window.posthog)
+    window.posthog.capture("ai_prompt_submitted", {
+      prompt_length: prompt.length,
+    });
+
   try {
     const response = await fetch(`${API_BASE_URL}/generate-image`, {
       method: "POST",
@@ -619,6 +697,11 @@ async function handleAiGenerate() {
       });
       // Update token balance display after successful generation
       fetchAndDisplayTokenBalance();
+      // --- PostHog Event ---
+      if (window.posthog)
+        window.posthog.capture("ai_image_generated", {
+          num_images_returned: data.images.length,
+        });
     } else {
       displayMessage(aiStatus, "Keine Bilder vom Server erhalten.", "error");
     }
@@ -646,6 +729,9 @@ function handleAiImageSelection(event) {
     imagePreviewAi.innerHTML = `<img src="${selectedUrl}" alt="Ausgewähltes AI Bild">`;
     updateMockupImage(selectedUrl);
     displayMessage(aiStatus, "AI Bild ausgewählt.", "success");
+    // --- PostHog Event ---
+    if (window.posthog)
+      window.posthog.capture("ai_image_selected", { image_source: "ai" });
   }
 }
 
@@ -727,6 +813,12 @@ function handleProductSelection(event) {
       "info"
     );
     checkDesignCompletion();
+    // --- PostHog Event ---
+    if (window.posthog)
+      window.posthog.capture("product_selected", {
+        product_id: selectedProduct.id,
+        product_name: selectedProduct.name,
+      });
   } else {
     console.error("Selected product not found in availableProducts");
   }
@@ -812,6 +904,13 @@ function handleColorSelection(event) {
     "info"
   );
   checkDesignCompletion();
+  // --- PostHog Event ---
+  if (window.posthog)
+    window.posthog.capture("tshirt_color_selected", {
+      product_id: selectedProduct.id,
+      color_name: colorName,
+      color_code: colorCode,
+    });
 }
 
 // --- Phase 3 Helper Functions ---
@@ -1021,6 +1120,13 @@ function handleSizeSelection(event) {
       `Größe ${selectedSize} ausgewählt.`,
       "info"
     );
+    // --- PostHog Event ---
+    if (window.posthog)
+      window.posthog.capture("tshirt_size_selected", {
+        product_id: selectedProduct.id,
+        variant_id: selectedVariant.id,
+        size: selectedSize,
+      });
   } else {
     console.error("Could not find matching variant ID for selection");
     selectedSize = null;
@@ -1061,6 +1167,8 @@ function showCheckoutSection() {
   displayMessage(tshirtPaymentMessage, "");
   document.getElementById("order-confirmation-message").innerHTML = "";
   document.getElementById("shipping-form").style.display = "block"; // Ensure form is visible
+  // --- PostHog Event ---
+  if (window.posthog) window.posthog.capture("checkout_started");
 }
 
 async function handleGetShippingOptions() {
@@ -1169,6 +1277,13 @@ function handleShippingOptionSelection(event) {
       "success"
     );
     initiateTshirtPayment();
+    // --- PostHog Event ---
+    if (window.posthog)
+      window.posthog.capture("shipping_option_selected", {
+        service_id: selectedShippingOption.id,
+        service_name: selectedShippingOption.name,
+        rate: selectedShippingOption.rate,
+      });
   } else {
     console.error("Selected shipping option not found");
   }
@@ -1237,6 +1352,10 @@ async function initiateTshirtPayment() {
     "info"
   );
   tshirtPaymentContainer.style.display = "block";
+
+  // --- PostHog Event ---
+  if (window.posthog)
+    window.posthog.capture("payment_initiated", { purchase_type: "tshirt" });
 
   try {
     const response = await fetch(
@@ -1327,7 +1446,13 @@ async function handleSubmitTshirtOrder() {
       shippingForm.style.display = "none";
       shippingOptionsContainer.style.display = "none";
       tshirtPaymentContainer.style.display = "none";
-      // TODO: Capture PostHog event for tshirt_order_completed
+      // --- PostHog Event ---
+      if (window.posthog)
+        window.posthog.capture("tshirt_order_completed", {
+          product_id: selectedProduct?.id,
+          variant_id: selectedVariant?.id,
+          shipping_country: shippingCountrySelect?.value,
+        });
     } else if (paymentIntent.status === "requires_action") {
       displayMessage(
         tshirtPaymentMessage,
@@ -1450,5 +1575,55 @@ function handleScaleSlider() {
   checkDesignCompletion();
 }
 
-// TODO: Implement PostHog integration
-// import posthog from 'posthog-js';
+async function handleRecoveryRequest() {
+  const email = recoveryEmailInput.value;
+  if (!email) {
+    displayMessage(
+      recoveryMessageDiv,
+      "Bitte gib deine Email-Adresse ein.",
+      "error"
+    );
+    return;
+  }
+
+  displayMessage(
+    recoveryMessageDiv,
+    "Bitte warte, während wir deine Bestätigung senden...",
+    "info"
+  );
+  setLoadingState(recoveryRequestButton, true);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/recovery-request`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!response.ok) {
+      throw new Error(response.statusText);
+    }
+
+    displayMessage(
+      recoveryMessageDiv,
+      "Bestätigung wurde erfolgreich gesendet!",
+      "success"
+    );
+    // --- PostHog Event ---
+    if (window.posthog)
+      window.posthog.capture("grant_id_recovery_requested", {
+        email_provided: !!email,
+      });
+  } catch (error) {
+    console.error("Error requesting recovery:", error);
+    displayMessage(
+      recoveryMessageDiv,
+      "Fehler beim Senden der Bestätigung. Bitte versuche es später erneut.",
+      "error"
+    );
+  } finally {
+    setLoadingState(recoveryRequestButton, false);
+  }
+}
