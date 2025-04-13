@@ -42,12 +42,197 @@ body {
   min-height: 100vh;
 }
 
-/* ... rest of the styles from the new block ... */
+main {
+  flex-grow: 1;
+  padding-top: var(--spacing-lg);
+  padding-bottom: var(--spacing-xl);
+}
 
-/* Ensure the very last style rule is included */
-@media (max-width: 768px) {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin-bottom: var(--spacing-md);
+  font-weight: 700;
+}
+
+p {
+  margin-bottom: var(--spacing-md);
+}
+
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Forms */
+label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-weight: 500;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="file"],
+textarea,
+select {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  margin-bottom: var(--spacing-md);
+  background-color: #fff; /* Ensure background for inputs */
+}
+
+input[type="file"] {
+  padding: var(--spacing-xs);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
+.form-group {
+  margin-bottom: var(--spacing-lg);
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap; /* Allow wrapping on small screens */
+  gap: var(--spacing-md);
+}
+.form-row .form-group {
+  flex: 1;
+  min-width: 150px; /* Prevent fields becoming too narrow */
+}
+
+/* Utility Classes */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-md);
+}
+
+.card {
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Buttons */
+.button {
+  /* ... existing styles ... */
+  margin-right: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  vertical-align: middle; /* Align buttons nicely if inline */
+}
+
+.button.loading {
+  cursor: wait;
+  opacity: 0.7;
+  /* Add spinner via pseudo-element if desired */
+  /* Example: 
+    position: relative;
+    color: transparent !important; 
+    */
+}
+/* Add spinner CSS if needed */
+/* .button.loading::after { ... spinner styles ... } */
+
+/* ... other button styles (.button-primary, :disabled) ... */
+
+/* Status Messages */
+.status-message {
+  /* ... existing styles ... */
+}
+.status-message.error {
   /* ... */
-  #token-balance-display {
-    margin-top: var(--spacing-sm);
+}
+.status-message.success {
+  /* ... */
+}
+.status-message.info {
+  /* ... */
+}
+
+/* Header */
+/* ... existing header styles ... */
+
+/* Tabs */
+/* ... existing tab styles ... */
+
+/* Image Previews & Grids */
+/* ... existing image styles ... */
+
+/* Selection Lists (Products, Shipping) */
+/* ... existing selection list styles ... */
+
+/* Color Swatches */
+/* ... existing swatch styles ... */
+
+/* Size Selector */
+/* ... existing size selector styles ... */
+
+/* Design Layout */
+/* ... existing design layout styles ... */
+
+/* Mockup Styles */
+/* ... existing mockup viewer/area styles ... */
+#mockup-background {
+  /* ... existing styles ... */
+}
+
+#design-image-container {
+  /* ... existing styles ... */
+  border: 1px dashed rgba(0, 0, 0, 0.2); /* Lighter border by default */
+}
+
+#design-image-container:hover {
+  border-color: rgba(0, 0, 0, 0.5);
+}
+
+/* ... rest of mockup styles ... */
+
+/* Stripe Element Container */
+/* ... existing stripe container styles ... */
+
+/* Checkout Layout */
+/* ... existing checkout layout styles ... */
+
+/* Footer */
+/* ... existing footer styles ... */
+
+/* Responsive */
+@media (max-width: 768px) {
+  /* ... existing header adjustments ... */
+  .form-row {
+    flex-direction: column; /* Stack form row items */
+    gap: 0;
+  }
+  .form-row .form-group {
+    margin-bottom: var(--spacing-md); /* Add spacing back */
   }
 }
+
+/* Add other breakpoints if needed */
