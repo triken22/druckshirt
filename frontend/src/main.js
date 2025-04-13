@@ -1,3 +1,39 @@
+import * as Sentry from "@sentry/browser";
+
+// --- Sentry Initialization ---
+// IMPORTANT: Replace placeholder DSN with an environment variable!
+// E.g., using Vite: import.meta.env.VITE_SENTRY_DSN
+const SENTRY_DSN = "https://YOUR_DSN_HERE@oXXXXXX.ingest.sentry.io/XXXXXXX"; // <-- REPLACE THIS
+const APP_ENV =
+  window.location.hostname === "localhost" ? "development" : "production"; // Basic env detection
+
+if (
+  SENTRY_DSN &&
+  SENTRY_DSN !== "https://YOUR_DSN_HERE@oXXXXXX.ingest.sentry.io/XXXXXXX"
+) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    integrations: [
+      // Default integrations handle unhandled exceptions, rejections, etc.
+    ],
+    // Set tracesSampleRate to 1.0 to capture 100% of transactions for performance monitoring.
+    // We recommend adjusting this value in production
+    tracesSampleRate: 0.2, // Sample 20% of transactions
+    environment: APP_ENV,
+    // release: "my-project-name@" + process.env.npm_package_version, // Requires build process
+    beforeSend(event, hint) {
+      // Optional: Modify or drop events
+      console.log("Sentry event (frontend) prepared:", event, hint);
+      return event;
+    },
+  });
+  console.log("Sentry initialized (Frontend)");
+  Sentry.setTag("environment", APP_ENV);
+} else {
+  console.warn("Sentry DSN not configured. Sentry disabled (Frontend).");
+}
+// --- End Sentry Initialization ---
+
 console.log("DruckMeinShirt frontend loaded!");
 
 // PostHog Initialization (placeholder)
@@ -408,6 +444,7 @@ async function fetchAndDisplayTokenBalance() {
   } catch (error) {
     console.error("Error fetching token balance:", error);
     displayMessage(tokenBalanceDisplay, "Tokens: Fehler", "error");
+    Sentry.captureException(error, { tags: { context: "fetchTokenBalance" } }); // Capture handled error
   }
 }
 
@@ -466,6 +503,9 @@ async function handleUseUploadedImage() {
         "error"
       );
       imagePreviewUpload.innerHTML = ""; // Clear preview on error
+      Sentry.captureException(error, {
+        tags: { context: "handleImageUpload" },
+      }); // Capture handled error
     })
     .finally(() => {
       setLoadingState(imageUploadButton, false);
@@ -535,6 +575,9 @@ async function initiateTokenPurchase() {
   } catch (error) {
     console.error("Error initiating token purchase:", error);
     displayMessage(paymentMessage, `Fehler: ${error.message}`, "error");
+    Sentry.captureException(error, {
+      tags: { context: "handleTokenPurchase" },
+    }); // Capture handled error
   } finally {
     setLoadingState(buyTokensButton, false);
   }
@@ -621,6 +664,9 @@ async function handleTokenPaymentSubmit() {
       "Fehler bei der Zahlungsabwicklung.",
       "error"
     );
+    Sentry.captureException(error, {
+      tags: { context: "handleTokenPaymentSubmit" },
+    }); // Capture handled error
   } finally {
     // Only hide loading state if not succeeded (as the button is hidden on success)
     if (submitPaymentButton.style.display !== "none") {
@@ -738,6 +784,7 @@ async function handleAiGenerate() {
       `Fehler bei der Generierung: ${error.message}`,
       "error"
     );
+    Sentry.captureException(error, { tags: { context: "handleAiGeneration" } }); // Capture handled error
   } finally {
     setLoadingState(aiGenerateButton, false);
   }
@@ -796,6 +843,7 @@ async function fetchAndDisplayProducts() {
   } catch (error) {
     console.error("Error fetching products:", error);
     productListDiv.innerHTML = "<p>Fehler beim Laden der Produkte.</p>";
+    Sentry.captureException(error, { tags: { context: "fetchProducts" } }); // Capture handled error
   }
 }
 
@@ -1268,6 +1316,9 @@ async function handleGetShippingOptions() {
       `Fehler beim Laden der Versandoptionen: ${error.message}`,
       "error"
     );
+    Sentry.captureException(error, {
+      tags: { context: "handleGetShippingOptions" },
+    }); // Capture handled error
   } finally {
     setLoadingState(getShippingButton, false);
   }
@@ -1403,6 +1454,9 @@ async function initiateTshirtPayment() {
   } catch (error) {
     console.error("Error initiating T-Shirt payment:", error);
     displayMessage(tshirtPaymentMessage, `Fehler: ${error.message}`, "error");
+    Sentry.captureException(error, {
+      tags: { context: "handleTShirtOrderPayment" },
+    }); // Capture handled error
     tshirtPaymentContainer.style.display = "none";
   }
 }
@@ -1490,6 +1544,9 @@ async function handleSubmitTshirtOrder() {
       "Fehler bei der Zahlungsabwicklung.",
       "error"
     );
+    Sentry.captureException(error, {
+      tags: { context: "handleSubmitTshirtOrder" },
+    }); // Capture handled error
     setLoadingState(submitTshirtOrderButton, false);
   } finally {
     // Keep button enabled if payment didn't succeed definitively
@@ -1632,11 +1689,15 @@ async function handleRecoveryRequest() {
       });
   } catch (error) {
     console.error("Error requesting recovery:", error);
+    // Still show generic success message to user
     displayMessage(
       recoveryMessageDiv,
-      "Fehler beim Senden der Bestätigung. Bitte versuche es später erneut.",
-      "error"
+      "Wiederherstellungsanfrage gesendet (falls Email bekannt).",
+      "info"
     );
+    Sentry.captureException(error, {
+      tags: { context: "handleRecoveryRequest" },
+    }); // Capture handled error
   } finally {
     setLoadingState(recoveryRequestButton, false);
   }
