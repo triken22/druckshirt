@@ -48,6 +48,10 @@ main {
   padding-bottom: var(--spacing-xl);
 }
 
+section {
+  margin-bottom: var(--spacing-xl); /* Increase space between sections */
+}
+
 h1,
 h2,
 h3,
@@ -56,6 +60,21 @@ h5,
 h6 {
   margin-bottom: var(--spacing-md);
   font-weight: 700;
+  line-height: 1.3;
+}
+
+h1 {
+  font-size: 2.5rem;
+}
+h2 {
+  font-size: 2rem;
+  margin-top: var(--spacing-lg); /* Add top margin to section titles */
+}
+h3 {
+  font-size: 1.5rem;
+}
+h4 {
+  font-size: 1.2rem;
 }
 
 p {
@@ -204,8 +223,16 @@ input[type="range"] {
 }
 
 #design-image-container {
-  /* ... existing styles ... */
-  border: 1px dashed rgba(0, 0, 0, 0.2); /* Lighter border by default */
+  position: absolute;
+  width: 40%;
+  height: auto;
+  top: 25%;
+  left: 30%;
+  cursor: grab;
+  user-select: none;
+  border: 1px dashed rgba(0, 0, 0, 0.2);
+  /* Add a subtle inner shadow for depth maybe? */
+  /* box-shadow: inset 0 0 5px rgba(0,0,0,0.1); */
 }
 
 #design-image-container:hover {
@@ -236,3 +263,26 @@ input[type="range"] {
 }
 
 /* Add other breakpoints if needed */
+
+.mockup-viewer {
+  /* Styles for right column */
+  position: sticky;
+  top: calc(
+    var(--spacing-lg) + 60px
+  ); /* Adjust sticky top offset considering header height */
+  height: fit-content; /* Ensure sticky positioning works correctly */
+}
+
+.resize-handle {
+  position: absolute;
+  bottom: 5px; /* Position slightly offset from corner */
+  right: 5px;
+  width: 12px;
+  height: 12px;
+  background-color: var(--primary-color);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  z-index: 10; /* Ensure it's above the container border */
+}
