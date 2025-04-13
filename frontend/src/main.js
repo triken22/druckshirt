@@ -1,8 +1,11 @@
 console.log("DruckMeinShirt frontend loaded!");
 
 // PostHog Initialization (placeholder)
-// import posthog from 'posthog-js'
-// posthog.init('<ph_project_api_key>', { api_host: '<ph_instance_address>' })
+import posthog from "posthog-js";
+posthog.init("phc_8ipgZfvHLUHGZ6J8b9AlkviiEzib4c77qhN69T9x4pK", {
+  api_host: "https://us.i.posthog.com",
+  person_profiles: "identified_only",
+});
 
 // TODO: Implement frontend logic
 // - Image Upload Handling
@@ -14,11 +17,12 @@ console.log("DruckMeinShirt frontend loaded!");
 
 // Configuration (Replace with your actual keys or use environment variables)
 // TODO: Replace with your actual Stripe Publishable Key
-const STRIPE_PUBLISHABLE_KEY = "pk_test_YOUR_KEY_HERE";
+const STRIPE_PUBLISHABLE_KEY =
+  "pk_test_51MuCKzEmVs0WNShEf8Qr8WIpu275tgCkv1jtyHq90IsHNMmKMSjcVD1bm5GYgRvqeceAmtUSzUGKXJdg85y2OV0C00apBVxzES";
 // --- PostHog Config ---
 // TODO: Replace with environment variables injected during build/deployment
-const POSTHOG_API_KEY = null; // Set via env: e.g., import.meta.env.VITE_POSTHOG_API_KEY
-const POSTHOG_HOST_URL = "https://app.posthog.com"; // Or your self-hosted instance
+const POSTHOG_API_KEY = "phc_8ipgZfvHLUHGZ6J8b9AlkviiEzib4c77qhN69T9x4pK"; // Set via env: e.g., import.meta.env.VITE_POSTHOG_API_KEY
+const POSTHOG_HOST_URL = "https://us.i.posthog.com"; // Or your self-hosted instance
 // --- End PostHog Config ---
 
 // Constants
@@ -194,7 +198,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     posthog.init(POSTHOG_API_KEY, {
       api_host: POSTHOG_HOST_URL,
       // TODO: Implement user opt-out check here if needed
-      // loaded: function(posthog) { if (userHasOptedOut()) { posthog.opt_out_capturing(); } }
+      loaded: function (posthog) {
+        if (userHasOptedOut()) {
+          posthog.opt_out_capturing();
+        }
+      },
     });
     console.log("PostHog initialized.");
   } else {
@@ -862,18 +870,20 @@ function handleColorSelection(event) {
     .forEach((swatch) => swatch.classList.remove("selected"));
   targetSwatch.classList.add("selected");
 
-  selectedVariant = { color: colorName, color_code: colorCode };
+  selectedVariant = { color: colorName, color_code: colorCode }; // Basic info
 
   // --- Update Mockup Background ---
   const mockupBg = document.getElementById("mockup-background");
   if (mockupBg) {
-    // Try to find a variant-specific image URL provided by the backend
+    // Find the specific variant data from the fully populated product data
     const matchingVariant = selectedProduct.variants?.find(
+      (v) => v.color === colorName && v.size === selectedSize
+    ); // Use selectedSize if available, or find first match?
+    // Let's refine: Find the base variant info for the color first.
+    const firstVariantOfColor = selectedProduct.variants?.find(
       (v) => v.color === colorName
     );
-    // Check if the variant object has an 'image' property (or similar)
-    const variantImageUrl =
-      matchingVariant?.image_url || matchingVariant?.image; // Adjust property name if needed
+    const variantImageUrl = firstVariantOfColor?.image_url; // Use the image URL provided by backend
 
     if (variantImageUrl) {
       mockupBg.style.backgroundImage = `url('${variantImageUrl}')`;
@@ -888,29 +898,29 @@ function handleColorSelection(event) {
         selectedProduct.default_image_url
       );
     } else {
-      // Final fallback: use selected color code as background
-      mockupBg.style.backgroundImage = "none";
-      mockupBg.style.backgroundColor = colorCode;
-      console.log("Set mockup background color:", colorCode);
+      // Final fallback: use selected color code AND clear image
+      // This might be less ideal than showing the default placeholder again?
+      // Let's try reverting to placeholder if no other images found.
+      const placeholderUrl = "./src/assets/placeholder-tshirt.png"; // Ensure path is correct
+      mockupBg.style.backgroundImage = `url('${placeholderUrl}')`;
+      mockupBg.style.backgroundColor = colorCode; // Keep color hint
+      console.log(
+        "Could not find product/variant image, showing placeholder with color hint:",
+        colorCode
+      );
     }
   }
   // --- End Update Mockup Background ---
 
+  // Fetch and display sizes for the selected color
   displaySizeSelector(selectedProduct, colorName);
-  selectedSize = null;
+  selectedSize = null; // Reset size selection when color changes
   displayMessage(
     document.getElementById("design-status"),
     `Farbe ${colorName} ausgewählt.`,
     "info"
   );
   checkDesignCompletion();
-  // --- PostHog Event ---
-  if (window.posthog)
-    window.posthog.capture("tshirt_color_selected", {
-      product_id: selectedProduct.id,
-      color_name: colorName,
-      color_code: colorCode,
-    });
 }
 
 // --- Phase 3 Helper Functions ---
@@ -1046,20 +1056,6 @@ function getPlacementData() {
   );
   return placementData;
 }
-
-// --- Modified Phase 2 & 3 Logic ---
-// THIS SECTION CONTAINS DUPLICATES AND WILL BE REMOVED
-/*
-function handleProductSelection(event) {
-    // ... Duplicate logic ...
-}
-
-function handleColorSelection(event) {
-    // ... Duplicate logic ...
-}
-*/
-// --- REMOVED DUPLICATE FUNCTION DEFINITIONS (Lines ~925 onwards) ---
-// The correct versions exist earlier in the file (around lines 738 and 777).
 
 // --- Phase 3 Core Logic ---
 

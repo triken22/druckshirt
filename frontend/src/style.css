@@ -368,27 +368,45 @@ input[type="number"] {
   width: 80px; /* Smaller width for quantity */
 }
 
-/* Mockup Interaction */
+/* Mockup Styles */
+.mockup-area {
+  position: relative; /* Ensure container is positioned */
+  overflow: hidden; /* Hide parts of image dragged outside */
+}
+
 #mockup-background {
-  width: 300px; /* Example fixed size */
-  height: 350px;
-  background-color: #ccc;
-  position: relative;
-  border: 1px solid #999;
-  margin: 0 auto;
+  width: 100%;
+  height: 400px; /* Or adjust as needed */
+  background-color: #eee; /* Fallback color */
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-  overflow: hidden; /* Hide parts of image dragged outside */
+  /* --- Set Initial Placeholder Image --- */
+  background-image: url("./src/assets/placeholder-tshirt.png"); /* Adjust path if needed */
+  position: relative; /* For positioning overlay */
 }
 
 #design-image-container {
   position: absolute;
-  cursor: grab; /* Indicate draggable */
+  width: 40%; /* Initial size */
+  height: auto; /* Maintain aspect ratio */
+  top: 25%;
+  left: 30%;
+  cursor: grab;
+  user-select: none; /* Prevent text selection while dragging */
+  border: 1px dashed rgba(0, 0, 0, 0.5); /* Optional: visual aid */
 }
 
 #design-image-container:active {
   cursor: grabbing;
+}
+
+#design-image-overlay {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* Ensure image scales within container */
+  pointer-events: none; /* Allow clicks to pass through to container */
 }
 
 .resize-handle {
