@@ -219,20 +219,42 @@
             </button>
           </div>
 
-          <div class="mockup-viewer">
-            <div class="mockup-area">
-              <div id="mockup-background">
-                <!-- Background image set by CSS/JS -->
-                <div id="design-image-container">
-                  <img
-                    id="design-image-overlay"
-                    src="#"
-                    alt="Design Overlay"
-                    style="display: none"
-                  />
-                  <div class="resize-handle"></div>
-                </div>
+          <div class="mockup-area">
+            <div id="mockup-background">
+              <div id="design-image-container">
+                <img
+                  id="design-image"
+                  alt="Your design"
+                  style="display: none"
+                />
               </div>
+              <div
+                id="printable-area-overlay"
+                class="printable-area-overlay"
+                style="display: none"
+              ></div>
+              <img
+                id="mockup-image-overlay"
+                src="/assets/mockup-overlay.png"
+                alt="Mockup overlay"
+                style="display: none"
+              />
+            </div>
+            <div id="message-container"></div>
+            <div class="controls">
+              <input
+                type="file"
+                id="image-upload"
+                accept="image/*"
+                style="display: none"
+              />
+              <button id="upload-button" class="button">Upload Design</button>
+              <button
+                id="toggle-printable-area"
+                class="button button-secondary"
+              >
+                Show Printable Area
+              </button>
             </div>
           </div>
         </div>

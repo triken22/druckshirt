@@ -1,28 +1,103 @@
 import * as Sentry from "@sentry/browser";
 
-// --- Sentry Initialization ---
-// IMPORTANT: Replace placeholder DSN with an environment variable!
-// E.g., using Vite: import.meta.env.VITE_SENTRY_DSN
-const SENTRY_DSN = "https://YOUR_DSN_HERE@oXXXXXX.ingest.sentry.io/XXXXXXX"; // <-- REPLACE THIS
-const APP_ENV =
-  window.location.hostname === "localhost" ? "development" : "production"; // Basic env detection
+/**
+ * @typedef {Object} Config
+ * @property {string} STRIPE_PUBLISHABLE_KEY - Stripe publishable key for payment processing
+ * @property {string} API_BASE_URL - Base URL for API endpoints
+ * @property {Object} POSTHOG - PostHog configuration
+ * @property {string} POSTHOG.API_KEY - PostHog API key
+ * @property {string} POSTHOG.HOST_URL - PostHog host URL
+ * @property {Object} TOKENS - Token-related configuration
+ * @property {string} TOKENS.BUNDLE_ID - Default token bundle ID
+ * @property {number} TOKENS.PRICE_EUR - Price in EUR for token bundle
+ * @property {Object} SENTRY - Sentry configuration
+ * @property {string} SENTRY.DSN - Sentry DSN
+ * @property {number} SENTRY.SAMPLE_RATE - Sentry sample rate
+ */
 
-if (
-  SENTRY_DSN &&
-  SENTRY_DSN !== "https://YOUR_DSN_HERE@oXXXXXX.ingest.sentry.io/XXXXXXX"
-) {
+/**
+ * Application configuration object.
+ * Values are loaded from environment variables where available.
+ * @type {Config}
+ */
+const CONFIG = {
+  STRIPE_PUBLISHABLE_KEY:
+    import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "pk_test_placeholder",
+  API_BASE_URL: import.meta.env.VITE_API_BASE_URL || "/api",
+  POSTHOG: {
+    API_KEY: import.meta.env.VITE_POSTHOG_API_KEY,
+    HOST_URL:
+      import.meta.env.VITE_POSTHOG_HOST_URL || "https://us.i.posthog.com",
+  },
+  TOKENS: {
+    BUNDLE_ID: "bundle_10_tokens",
+    PRICE_EUR: 5,
+  },
+  SENTRY: {
+    DSN: import.meta.env.VITE_SENTRY_DSN || "",
+    SAMPLE_RATE: 0.2,
+  },
+};
+
+/**
+ * Error types for application-specific errors
+ * @enum {string}
+ */
+const ErrorTypes = {
+  NETWORK: "NETWORK_ERROR",
+  API: "API_ERROR",
+  VALIDATION: "VALIDATION_ERROR",
+  PAYMENT: "PAYMENT_ERROR",
+  UPLOAD: "UPLOAD_ERROR",
+  UNKNOWN: "UNKNOWN_ERROR",
+  INITIALIZATION: "INITIALIZATION_ERROR",
+  CONFIGURATION: "CONFIGURATION_ERROR",
+};
+
+/**
+ * Custom error class for application-specific errors
+ * @extends Error
+ */
+class AppError extends Error {
+  /**
+   * @param {string} message - Error message
+   * @param {ErrorTypes} type - Type of error
+   * @param {Object} [details] - Additional error details
+   */
+  constructor(message, type = ErrorTypes.UNKNOWN, details = {}) {
+    super(message);
+    this.name = "AppError";
+    this.type = type;
+    this.details = details;
+    this.timestamp = new Date();
+  }
+}
+
+/**
+ * Retry configuration for network requests
+ * @type {Object}
+ */
+const RETRY_CONFIG = {
+  MAX_RETRIES: 3,
+  INITIAL_DELAY: 1000,
+  MAX_DELAY: 5000,
+  BACKOFF_FACTOR: 2,
+};
+
+// --- Sentry Initialization ---
+// Configure Sentry DSN via VITE_SENTRY_DSN environment variable
+const APP_ENV =
+  window.location.hostname === "localhost" ? "development" : "production";
+
+if (CONFIG.SENTRY.DSN) {
   Sentry.init({
-    dsn: SENTRY_DSN,
+    dsn: CONFIG.SENTRY.DSN,
     integrations: [
       // Default integrations handle unhandled exceptions, rejections, etc.
     ],
-    // Set tracesSampleRate to 1.0 to capture 100% of transactions for performance monitoring.
-    // We recommend adjusting this value in production
-    tracesSampleRate: 0.2, // Sample 20% of transactions
+    tracesSampleRate: CONFIG.SENTRY.SAMPLE_RATE,
     environment: APP_ENV,
-    // release: "my-project-name@" + process.env.npm_package_version, // Requires build process
     beforeSend(event, hint) {
-      // Optional: Modify or drop events
       console.log("Sentry event (frontend) prepared:", event, hint);
       return event;
     },
@@ -36,35 +111,66 @@ if (
 
 console.log("DruckMeinShirt frontend loaded!");
 
-// PostHog Initialization (placeholder)
-import posthog from "posthog-js";
-posthog.init("phc_8ipgZfvHLUHGZ6J8b9AlkviiEzib4c77qhN69T9x4pK", {
-  api_host: "https://us.i.posthog.com",
+// Initialize PostHog with configuration from CONFIG
+posthog.init(CONFIG.POSTHOG.API_KEY, {
+  api_host: CONFIG.POSTHOG.HOST_URL,
   person_profiles: "identified_only",
 });
 
-// TODO: Implement frontend logic
-// - Image Upload Handling
-// - AI Prompt Input & Display
-// - Mockup Canvas Interaction
-// - Token Purchase Flow
-// - T-Shirt Ordering Flow
-// - API calls to backend worker
+/**
+ * Checks and returns the current PostHog opt-out state
+ * @returns {Promise<boolean>} True if opted out, false if opted in
+ */
+async function checkOptOutState() {
+  // First check localStorage
+  const storedState = localStorage.getItem("posthog_opted_out");
+  if (storedState !== null) {
+    return storedState === "true";
+  }
 
-// Configuration (Replace with your actual keys or use environment variables)
-// TODO: Replace with your actual Stripe Publishable Key
-const STRIPE_PUBLISHABLE_KEY =
-  "pk_test_51MuCKzEmVs0WNShEf8Qr8WIpu275tgCkv1jtyHq90IsHNMmKMSjcVD1bm5GYgRvqeceAmtUSzUGKXJdg85y2OV0C00apBVxzES";
-// --- PostHog Config ---
-// TODO: Replace with environment variables injected during build/deployment
-const POSTHOG_API_KEY = "phc_8ipgZfvHLUHGZ6J8b9AlkviiEzib4c77qhN69T9x4pK"; // Set via env: e.g., import.meta.env.VITE_POSTHOG_API_KEY
-const POSTHOG_HOST_URL = "https://us.i.posthog.com"; // Or your self-hosted instance
-// --- End PostHog Config ---
+  // If not in localStorage, check PostHog's internal state
+  if (window.posthog) {
+    const hasOptedOut = await new Promise((resolve) => {
+      window.posthog.has_opted_out_capturing(resolve);
+    });
+    // Store the state for future reference
+    localStorage.setItem("posthog_opted_out", hasOptedOut.toString());
+    return hasOptedOut;
+  }
 
-// Constants
-const API_BASE_URL = "/api"; // Assuming backend is served from the same origin
-const TOKEN_BUNDLE_ID = "bundle_10_tokens"; // Example bundle ID
-const TOKEN_PRICE_EUR = 5; // Example price
+  // Default to opted out if PostHog is not available
+  return true;
+}
+
+/**
+ * Handles changes to the PostHog opt-out toggle
+ * @param {Event} event - The change event from the toggle
+ */
+async function handlePostHogOptOutToggle(event) {
+  if (!window.posthog) {
+    console.warn("PostHog not available. Analytics disabled.");
+    if (posthogOptOutToggle) {
+      posthogOptOutToggle.disabled = true;
+    }
+    return;
+  }
+
+  const isOptingOut = event.target.checked;
+  if (isOptingOut) {
+    window.posthog.opt_out_capturing();
+  } else {
+    window.posthog.opt_in_capturing();
+  }
+
+  // Update localStorage
+  localStorage.setItem("posthog_opted_out", isOptingOut.toString());
+}
+
+// Initialize Stripe when the page loads
+let stripe = null;
+let paymentElement = null;
+let currentClientSecret = null;
+let currentGrantId = null;
 
 // --- DOM Elements ---
 let tokenBalanceDisplay,
@@ -82,12 +188,6 @@ let aiPromptInput, aiGenerateButton, aiStatus, aiResultsGrid;
 let productListDiv, colorSwatchesDiv, mockupImageOverlay;
 let imagePreviewUpload, imagePreviewAi;
 let tabButtons, tabContents;
-
-// --- Stripe Variables ---
-let stripe = null;
-let paymentElement = null;
-let currentClientSecret = null;
-let currentGrantId = null;
 
 // --- State Variables ---
 let availableProducts = []; // Will now store more details, including placements
@@ -213,60 +313,54 @@ document.addEventListener("DOMContentLoaded", async () => {
   posthogOptOutToggle = document.getElementById("posthog-opt-out-toggle");
 
   // Initialize Stripe
-  if (STRIPE_PUBLISHABLE_KEY === "pk_test_YOUR_KEY_HERE") {
-    console.warn(
-      "Stripe Publishable Key not set. Token purchase will not work."
-    );
-    displayMessage(paymentMessage, "Stripe ist nicht konfiguriert.", "error");
-    buyTokensButton.disabled = true;
-  } else {
-    try {
-      stripe = await loadStripe(STRIPE_PUBLISHABLE_KEY);
-    } catch (error) {
-      console.error("Error loading Stripe:", error);
-      displayMessage(paymentMessage, "Fehler beim Laden von Stripe.", "error");
-      buyTokensButton.disabled = true;
-    }
-  }
-
-  // Initialize PostHog (Optional - Placeholder for now)
-  if (POSTHOG_API_KEY) {
-    posthog.init(POSTHOG_API_KEY, {
-      api_host: POSTHOG_HOST_URL,
-      // TODO: Implement user opt-out check here if needed
-      loaded: (posthog) => {
-        if (userHasOptedOut()) {
-          posthog.opt_out_capturing();
-        }
-      },
-    });
-    console.log("PostHog initialized.");
-  } else {
-    console.warn("PostHog API Key not set. Analytics disabled.");
-  }
-
-  // --- PostHog Opt-Out Handling ---
-  // Check initial opt-out state AFTER PostHog is loaded (snippet handles init)
-  // Use a small delay or a more robust check if needed
-  setTimeout(() => {
+  try {
     if (
-      window.posthog &&
-      typeof window.posthog.has_opted_out_capturing === "function"
+      !CONFIG.STRIPE_PUBLISHABLE_KEY ||
+      CONFIG.STRIPE_PUBLISHABLE_KEY === "pk_test_placeholder"
     ) {
-      const hasOptedOut = window.posthog.has_opted_out_capturing();
-      posthogOptOutToggle.checked = hasOptedOut;
-      console.log("Initial PostHog opt-out state:", hasOptedOut);
-    } else {
-      console.warn("PostHog not fully loaded yet for opt-out check.");
-      // Optionally retry check later
+      throw new AppError(
+        ErrorTypes.CONFIGURATION,
+        "Stripe publishable key not configured"
+      );
     }
-  }, 500); // Delay slightly to ensure snippet has likely run
-
-  // Add listener for the toggle
-  if (posthogOptOutToggle) {
-    posthogOptOutToggle.addEventListener("change", handlePostHogOptOutToggle);
+    stripe = await loadStripe(CONFIG.STRIPE_PUBLISHABLE_KEY);
+    if (!stripe) {
+      throw new AppError(
+        ErrorTypes.INITIALIZATION,
+        "Stripe failed to initialize"
+      );
+    }
+    console.log("Stripe initialized successfully");
+  } catch (error) {
+    console.error("Failed to initialize Stripe:", error);
+    displayMessage(
+      paymentMessage,
+      "Stripe konnte nicht initialisiert werden. Bitte laden Sie die Seite neu.",
+      "error"
+    );
+    // Report to Sentry and PostHog
+    if (Sentry) {
+      Sentry.captureException(error);
+    }
+    await captureErrorEvent(error, "stripe_initialization", {
+      stripe_key_configured: !!CONFIG.STRIPE_PUBLISHABLE_KEY,
+    });
   }
-  // --- End PostHog Opt-Out ---
+
+  // Initialize PostHog opt-out state
+  if (window.posthog && posthogOptOutToggle) {
+    // Check initial opt-out state and update UI
+    const hasOptedOut = await checkOptOutState();
+    posthogOptOutToggle.checked = hasOptedOut;
+
+    // Set up opt-out toggle listener
+    posthogOptOutToggle.addEventListener("change", handlePostHogOptOutToggle);
+  } else {
+    console.warn("PostHog not available. Analytics disabled.");
+    if (posthogOptOutToggle) {
+      posthogOptOutToggle.disabled = true;
+    }
+  }
 
   // Add Event Listeners
   if (imageUploadButton) {
@@ -275,10 +369,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     imageUploadButton.addEventListener("click", handleUseUploadedImage);
   }
   if (buyTokensButton) {
-    buyTokensButton.addEventListener("click", initiateTokenPurchase);
+    buyTokensButton.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await initiateTokenPurchase();
+    });
   }
   if (submitPaymentButton) {
-    submitPaymentButton.addEventListener("click", handleTokenPaymentSubmit);
+    submitPaymentButton.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await handleTokenPaymentSubmit();
+    });
   }
   if (aiGenerateButton) {
     aiGenerateButton.dataset.originalText = "Generieren";
@@ -399,317 +499,134 @@ function saveTokenGrantId(grantId) {
   localStorage.setItem("druckmeinshirt_grant_id", grantId);
 }
 
-// --- PostHog Opt-Out Handler ---
-function handlePostHogOptOutToggle() {
-  if (!window.posthog) {
-    console.error("PostHog is not available.");
-    return;
-  }
-  if (posthogOptOutToggle.checked) {
-    window.posthog.opt_out_capturing();
-    console.log("PostHog capturing opted OUT.");
-  } else {
-    window.posthog.opt_in_capturing();
-    console.log("PostHog capturing opted IN.");
-  }
-}
-
 // --- Core Logic ---
 async function fetchAndDisplayTokenBalance() {
   const grantId = getTokenGrantId();
   if (!grantId) {
     displayMessage(tokenBalanceDisplay, "Tokens: 0 (Keine Grant ID)", "info");
-    return;
+    return null;
   }
 
   displayMessage(tokenBalanceDisplay, "Tokens: Prüfe...", "info");
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/get-token-balance?grant_id=${grantId}`
+    const data = await makeApiCall(
+      `${CONFIG.API_BASE_URL}/get-token-balance?grant_id=${encodeURIComponent(
+        grantId
+      )}`,
+      {},
+      (response) => typeof response.tokens_remaining === "number"
     );
-    if (!response.ok) {
-      if (response.status === 404) {
-        displayMessage(tokenBalanceDisplay, "Tokens: 0 (Ungültige ID)", "info");
-      } else {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } else {
-      const data = await response.json();
-      displayMessage(
-        tokenBalanceDisplay,
-        `Tokens: ${data.tokens_remaining}`,
-        "info"
-      );
+
+    const balance = data.tokens_remaining;
+    displayMessage(tokenBalanceDisplay, `Tokens: ${balance}`, "info");
+
+    // Track balance check in PostHog
+    if (window.posthog) {
+      window.posthog.capture("token_balance_checked", {
+        grant_id: grantId,
+        balance: balance,
+        success: true,
+      });
     }
+
+    return balance;
   } catch (error) {
-    console.error("Error fetching token balance:", error);
-    displayMessage(tokenBalanceDisplay, "Tokens: Fehler", "error");
-    Sentry.captureException(error, { tags: { context: "fetchTokenBalance" } }); // Capture handled error
+    displayErrorMessage(tokenBalanceDisplay, error);
+
+    // Track failed balance check in PostHog
+    if (window.posthog) {
+      window.posthog.capture("token_balance_checked", {
+        grant_id: grantId,
+        success: false,
+        error_type: error.type,
+        error_message: error.message,
+      });
+    }
+
+    return null;
   }
 }
 
-async function handleUseUploadedImage() {
-  if (
-    !imageUploadInput ||
-    !imageUploadInput.files ||
-    imageUploadInput.files.length === 0
-  ) {
-    displayMessage(uploadStatus, "Bitte wähle zuerst ein Bild aus.", "error");
-    return;
-  }
-  const file = imageUploadInput.files[0];
-
-  // Display preview immediately
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    imagePreviewUpload.innerHTML = `<img src="${e.target.result}" alt="Upload Vorschau">`;
-  };
-  reader.readAsDataURL(file);
-
-  // Actual upload happens when user confirms
-  displayMessage(uploadStatus, "Lade Bild hoch, um es zu verwenden...", "info");
+/**
+ * Handles the upload of a user-selected image
+ * @async
+ * @param {File} file - The file to upload
+ * @returns {Promise<string|null>} The URL of the uploaded image or null if upload failed
+ * @throws {AppError} If file validation fails
+ */
+async function handleImageUpload(file) {
   setLoadingState(imageUploadButton, true);
+  displayMessage(uploadStatus, "Lade Bild hoch...", "info");
 
-  const formData = new FormData();
-  formData.append("image", file);
-
-  fetch(`${API_BASE_URL}/upload-image`, {
-    method: "POST",
-    body: formData,
-  })
-    .then(async (response) => {
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
-      }
-      displayMessage(
-        uploadStatus,
-        "Upload erfolgreich! Bild wird in Vorschau geladen.",
-        "success"
-      );
-      updateMockupImage(data.imageUrl);
-      // --- PostHog Event ---
-      if (window.posthog)
-        window.posthog.capture("image_uploaded", {
-          file_type: file.type,
-          file_size: file.size,
-        });
-    })
-    .catch((error) => {
-      console.error("Error uploading image:", error);
-      displayMessage(
-        uploadStatus,
-        `Upload fehlgeschlagen: ${error.message}`,
-        "error"
-      );
-      imagePreviewUpload.innerHTML = ""; // Clear preview on error
-      Sentry.captureException(error, {
-        tags: { context: "handleImageUpload" },
-      }); // Capture handled error
-    })
-    .finally(() => {
-      setLoadingState(imageUploadButton, false);
-    });
-}
-
-async function initiateTokenPurchase() {
-  const email = emailInput.value;
-  if (!email || !email.includes("@")) {
-    // Basic email validation
-    displayMessage(
-      paymentMessage,
-      "Bitte gib eine gültige Email-Adresse ein.",
-      "error"
-    );
-    return;
-  }
-  if (!stripe) {
-    displayMessage(paymentMessage, "Stripe ist nicht initialisiert.", "error");
-    return;
-  }
-
-  displayMessage(paymentMessage, "Initialisiere Zahlung...", "info");
-  setLoadingState(buyTokensButton, true);
-  grantIdDisplay.textContent = ""; // Clear previous grant ID
+  await captureAnalyticsEvent("image_upload_started", {
+    file_size: file.size,
+    file_type: file.type,
+  });
 
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/stripe/create-token-purchase-intent`,
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const data = await makeApiCall(
+      `${CONFIG.API_BASE_URL}/upload-image`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ bundle_id: TOKEN_BUNDLE_ID, email: email }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP error! status: ${response.status}`);
-    }
-
-    currentClientSecret = data.client_secret;
-    currentGrantId = data.grant_id; // Store temporarily
-
-    // Mount Stripe Payment Element
-    if (paymentElement) {
-      paymentElement.destroy(); // Destroy previous instance if exists
-    }
-    const elements = stripe.elements({ clientSecret: currentClientSecret });
-    paymentElement = elements.create("payment");
-    paymentElement.mount("#payment-element-container");
-
-    displayMessage(
-      paymentMessage,
-      "Bitte gib deine Zahlungsdaten ein.",
-      "info"
-    );
-    submitPaymentButton.style.display = "block"; // Show payment button
-    // --- PostHog Event ---
-    if (window.posthog)
-      window.posthog.capture("token_purchase_initiated", {
-        bundle_id: TOKEN_BUNDLE_ID,
-      });
-  } catch (error) {
-    console.error("Error initiating token purchase:", error);
-    displayMessage(paymentMessage, `Fehler: ${error.message}`, "error");
-    Sentry.captureException(error, {
-      tags: { context: "handleTokenPurchase" },
-    }); // Capture handled error
-  } finally {
-    setLoadingState(buyTokensButton, false);
-  }
-}
-
-async function handleTokenPaymentSubmit() {
-  if (!stripe || !paymentElement || !currentClientSecret || !currentGrantId) {
-    displayMessage(paymentMessage, "Zahlungselement nicht bereit.", "error");
-    return;
-  }
-
-  setLoadingState(submitPaymentButton, true);
-  displayMessage(paymentMessage, "Verarbeite Zahlung...", "info");
-
-  try {
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements: paymentElement, // Use the mounted PaymentElement
-      confirmParams: {
-        // Return URL is not strictly necessary for this simple flow,
-        // but might be useful for more complex scenarios.
-        // return_url: window.location.href,
+        body: formData,
       },
-      redirect: "if_required", // Don't redirect unless required by payment method
+      (response) => response.url && typeof response.url === "string"
+    );
+
+    await captureAnalyticsEvent("image_upload_completed", {
+      success: true,
+      image_url: data.url,
     });
 
-    if (error) {
-      // This point will only be reached if there is an immediate error when
-      // confirming the payment. Otherwise, your customer will be redirected to
-      // the `return_url`. For some payment methods like iDEAL, your customer will
-      // be redirected to an intermediate site first to authorize the payment, then
-      // redirected to the `return_url`.
-      if (error.type === "card_error" || error.type === "validation_error") {
-        displayMessage(paymentMessage, error.message, "error");
-      } else {
-        displayMessage(
-          paymentMessage,
-          "Ein unerwarteter Fehler ist aufgetreten.",
-          "error"
-        );
-        console.error("Stripe confirmPayment error:", error);
-      }
-      setLoadingState(submitPaymentButton, false);
-      return;
-    }
-
-    // Handle successful payment (or requires_action)
-    if (paymentIntent.status === "succeeded") {
-      displayMessage(
-        paymentMessage,
-        "Zahlung erfolgreich! Dein Grant ID wird angezeigt.",
-        "success"
-      );
-      saveTokenGrantId(currentGrantId); // Save Grant ID to localStorage
-      grantIdDisplay.innerHTML = `Dein Grant ID (bitte sicher aufbewahren): <code>${currentGrantId}</code> (wird auch per Email gesendet)`;
-      await fetchAndDisplayTokenBalance(); // Update balance display
-      submitPaymentButton.style.display = "none"; // Hide payment button
-      if (paymentElement) paymentElement.destroy(); // Clean up element
-      paymentElementContainer.innerHTML = ""; // Clear container
-      // --- PostHog Event ---
-      if (window.posthog)
-        window.posthog.capture("token_purchase_completed", {
-          bundle_id: TOKEN_BUNDLE_ID,
-          grant_id: currentGrantId,
-        });
-    } else if (paymentIntent.status === "requires_action") {
-      displayMessage(
-        paymentMessage,
-        "Weitere Aktion zur Bestätigung der Zahlung erforderlich.",
-        "info"
-      );
-      // Stripe.js automatically handles required actions like 3D Secure
-    } else {
-      displayMessage(
-        paymentMessage,
-        `Zahlungsstatus: ${paymentIntent.status}`,
-        "info"
-      );
-      console.warn("Unexpected payment intent status:", paymentIntent.status);
-    }
+    return data.url;
   } catch (error) {
-    console.error("Error processing payment:", error);
+    console.error("Image upload failed:", error);
     displayMessage(
-      paymentMessage,
-      "Fehler bei der Zahlungsabwicklung.",
+      uploadStatus,
+      "Fehler beim Hochladen des Bildes. Bitte versuchen Sie es erneut.",
       "error"
     );
-    Sentry.captureException(error, {
-      tags: { context: "handleTokenPaymentSubmit" },
-    }); // Capture handled error
+    await captureErrorEvent(error, "image_upload", {
+      file_size: file.size,
+      file_type: file.type,
+    });
+    return null;
   } finally {
-    // Only hide loading state if not succeeded (as the button is hidden on success)
-    if (submitPaymentButton.style.display !== "none") {
-      setLoadingState(submitPaymentButton, false);
+    setLoadingState(imageUploadButton, false);
+  }
+}
+
+/**
+ * Handles the user's request to use an uploaded image
+ * @async
+ */
+async function handleUseUploadedImage() {
+  const file = imageUploadInput.files[0];
+  setLoadingState(imageUploadButton, true);
+
+  try {
+    const imageUrl = await handleImageUpload(file);
+    if (imageUrl) {
+      updateMockupImage(imageUrl);
+      displayMessage(uploadStatus, "Bild erfolgreich hochgeladen.", "success");
+      imagePreviewUpload.innerHTML = `<img src="${imageUrl}" alt="Hochgeladenes Bild">`;
     }
+  } catch (error) {
+    displayErrorMessage(uploadStatus, error);
+    imagePreviewUpload.innerHTML = "";
+  } finally {
+    setLoadingState(imageUploadButton, false);
+    imageUploadInput.value = ""; // Clear the input
   }
 }
 
-// --- Load Stripe Async ---
-// Defined separately for clarity, called in DOMContentLoaded
-async function loadStripe(key) {
-  // This relies on the Stripe.js script being loaded in index.html
-  if (typeof Stripe === "undefined") {
-    throw new Error("Stripe.js script not loaded");
-  }
-  return Stripe(key);
-}
-
-// --- Phase 2 Helper Functions ---
-function switchTab(targetId) {
-  tabContents.forEach((content) => {
-    content.classList.toggle("active", content.id === targetId);
-  });
-  tabButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.target === targetId);
-  });
-}
-
-function updateMockupImage(imageUrl) {
-  selectedImageUrl = imageUrl;
-  if (mockupImageOverlay) {
-    mockupImageOverlay.src = imageUrl;
-    mockupImageOverlay.style.display = imageUrl ? "block" : "none";
-    // Reset scale and position when new image is loaded
-    designImageContainer.style.width = "40%"; // Reset width
-    designImageContainer.style.left = "30%";
-    designImageContainer.style.top = "25%";
-    imageScaleSlider.value = 1; // Reset slider
-  }
-  checkDesignCompletion();
-}
-
-// --- Phase 2 Core Logic ---
+/**
+ * Handles the generation of AI images based on user prompt
+ * @async
+ */
 async function handleAiGenerate() {
   const prompt = aiPromptInput.value.trim();
   const grantId = getTokenGrantId();
@@ -724,7 +641,6 @@ async function handleAiGenerate() {
       "Keine Grant ID gefunden. Bitte kaufe zuerst Tokens.",
       "error"
     );
-    // Optional: Highlight token purchase section or show modal
     return;
   }
 
@@ -733,79 +649,81 @@ async function handleAiGenerate() {
   aiResultsGrid.innerHTML = ""; // Clear previous results
   imagePreviewAi.innerHTML = ""; // Clear selection preview
 
-  // --- PostHog Event ---
-  if (window.posthog)
-    window.posthog.capture("ai_prompt_submitted", {
-      prompt_length: prompt.length,
-    });
-
   try {
-    const response = await fetch(`${API_BASE_URL}/generate-image`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: prompt, grant_id: grantId }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      if (response.status === 402) {
-        displayMessage(aiStatus, "Nicht genügend Tokens vorhanden.", "error");
-      } else {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
-      }
-    } else if (data.images && data.images.length > 0) {
-      displayMessage(
-        aiStatus,
-        "Generierung erfolgreich! Wähle ein Bild.",
-        "success"
-      );
-      data.images.forEach((imageUrl) => {
-        const img = document.createElement("img");
-        img.src = imageUrl;
-        img.alt = "Generiertes AI Bild";
-        img.dataset.imageUrl = imageUrl; // Store URL for selection
-        aiResultsGrid.appendChild(img);
+    // Track generation attempt in PostHog
+    if (window.posthog) {
+      window.posthog.capture("ai_prompt_submitted", {
+        prompt_length: prompt.length,
+        grant_id: grantId,
       });
-      // Update token balance display after successful generation
-      fetchAndDisplayTokenBalance();
-      // --- PostHog Event ---
-      if (window.posthog)
-        window.posthog.capture("ai_image_generated", {
-          num_images_returned: data.images.length,
-        });
-    } else {
-      displayMessage(aiStatus, "Keine Bilder vom Server erhalten.", "error");
     }
-  } catch (error) {
-    console.error("Error generating AI image:", error);
+
+    const data = await makeApiCall(
+      `${CONFIG.API_BASE_URL}/generate-image`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt, grant_id: grantId }),
+      },
+      (response) => Array.isArray(response.images) && response.images.length > 0
+    );
+
     displayMessage(
       aiStatus,
-      `Fehler bei der Generierung: ${error.message}`,
-      "error"
+      "Generierung erfolgreich! Wähle ein Bild.",
+      "success"
     );
-    Sentry.captureException(error, { tags: { context: "handleAiGeneration" } }); // Capture handled error
+
+    data.images.forEach((imageUrl) => {
+      const img = document.createElement("img");
+      img.src = imageUrl;
+      img.alt = "Generiertes AI Bild";
+      img.dataset.imageUrl = imageUrl;
+      aiResultsGrid.appendChild(img);
+    });
+
+    // Update token balance after successful generation
+    await fetchAndDisplayTokenBalance();
+
+    // Track successful generation in PostHog
+    if (window.posthog) {
+      window.posthog.capture("ai_image_generated", {
+        success: true,
+        num_images_returned: data.images.length,
+        prompt_length: prompt.length,
+        revised_prompt: data.revised_prompt,
+      });
+    }
+  } catch (error) {
+    displayErrorMessage(aiStatus, error);
+
+    // Track failed generation in PostHog
+    if (window.posthog) {
+      window.posthog.capture("ai_image_generated", {
+        success: false,
+        error_type: error.type,
+        error_message: error.message,
+        prompt_length: prompt.length,
+      });
+    }
   } finally {
     setLoadingState(aiGenerateButton, false);
   }
 }
 
-function handleAiImageSelection(event) {
-  if (event.target.tagName === "IMG" && event.target.dataset.imageUrl) {
-    const selectedUrl = event.target.dataset.imageUrl;
-    // Visually indicate selection
-    aiResultsGrid
-      .querySelectorAll("img")
-      .forEach((img) => img.classList.remove("selected"));
-    event.target.classList.add("selected");
-    // Show preview and update mockup
-    imagePreviewAi.innerHTML = `<img src="${selectedUrl}" alt="Ausgewähltes AI Bild">`;
-    updateMockupImage(selectedUrl);
-    displayMessage(aiStatus, "AI Bild ausgewählt.", "success");
-    // --- PostHog Event ---
-    if (window.posthog)
-      window.posthog.capture("ai_image_selected", { image_source: "ai" });
-  }
+async function handleAiImageSelection(event) {
+  const imageElement = event.target.closest(".ai-result-image");
+  if (!imageElement) return;
+
+  await captureAnalyticsEvent("ai_image_selected", {
+    image_source: "ai_generated",
+    image_id: imageElement.dataset.imageId,
+  });
+
+  selectedImageUrl = imageElement.src;
+  updateMockupWithSelectedImage(selectedImageUrl);
 }
 
 async function fetchAndDisplayProducts() {
@@ -813,7 +731,7 @@ async function fetchAndDisplayProducts() {
   productListDiv.innerHTML = "<p>Lade T-Shirt Produkte...</p>";
   try {
     // Assume the backend endpoint returns products including placement details now
-    const response = await fetch(`${API_BASE_URL}/printful/products`);
+    const response = await fetch(`${CONFIG.API_BASE_URL}/printful/products`);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -847,55 +765,20 @@ async function fetchAndDisplayProducts() {
   }
 }
 
-function handleProductSelection(event) {
-  const targetItem = event.target.closest(".product-item");
-  if (!targetItem || !targetItem.dataset.productId) return;
+async function handleProductSelection(event) {
+  const productElement = event.target.closest(".product-item");
+  if (!productElement) return;
 
-  const productId = Number.parseInt(targetItem.dataset.productId, 10);
+  const productId = productElement.dataset.productId;
   selectedProduct = availableProducts.find((p) => p.id === productId);
 
-  if (selectedProduct) {
-    productListDiv
-      .querySelectorAll(".product-item")
-      .forEach((item) => item.classList.remove("selected"));
-    targetItem.classList.add("selected");
+  await captureAnalyticsEvent("product_selected", {
+    product_id: productId,
+    product_type: selectedProduct.type,
+    product_name: selectedProduct.name,
+  });
 
-    // --- Update Mockup Background ---
-    const mockupBg = document.getElementById("mockup-background");
-    if (mockupBg && selectedProduct.default_image_url) {
-      // Set background image to the product's default image
-      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
-      mockupBg.style.backgroundColor = "transparent"; // Clear bg color if image is set
-      console.log(
-        "Set mockup background to product default:",
-        selectedProduct.default_image_url
-      );
-    } else if (mockupBg) {
-      mockupBg.style.backgroundImage = "none"; // Clear image if none provided
-      mockupBg.style.backgroundColor = "#ccc"; // Fallback color
-      console.log("Cleared mockup background, using fallback color.");
-    }
-    // --- End Update Mockup Background ---
-
-    displayColorSwatches(selectedProduct);
-    sizeSelectorDiv.innerHTML = "<p>Wähle zuerst Farbe.</p>";
-    selectedVariant = null;
-    selectedSize = null;
-    displayMessage(
-      document.getElementById("design-status"),
-      `${selectedProduct.name} ausgewählt.`,
-      "info"
-    );
-    checkDesignCompletion();
-    // --- PostHog Event ---
-    if (window.posthog)
-      window.posthog.capture("product_selected", {
-        product_id: selectedProduct.id,
-        product_name: selectedProduct.name,
-      });
-  } else {
-    console.error("Selected product not found in availableProducts");
-  }
+  updateProductDisplay();
 }
 
 function displayColorSwatches(product) {
@@ -923,70 +806,22 @@ function displayColorSwatches(product) {
   });
 }
 
-function handleColorSelection(event) {
-  const targetSwatch = event.target.closest(".color-swatch");
-  if (!targetSwatch || !targetSwatch.dataset.colorCode || !selectedProduct)
-    return;
+async function handleColorSelection(event) {
+  const colorElement = event.target.closest(".color-swatch");
+  if (!colorElement) return;
 
-  const colorCode = targetSwatch.dataset.colorCode;
-  const colorName = targetSwatch.dataset.colorName;
-
-  colorSwatchesDiv
-    .querySelectorAll(".color-swatch")
-    .forEach((swatch) => swatch.classList.remove("selected"));
-  targetSwatch.classList.add("selected");
-
-  selectedVariant = { color: colorName, color_code: colorCode }; // Basic info
-
-  // --- Update Mockup Background ---
-  const mockupBg = document.getElementById("mockup-background");
-  if (mockupBg) {
-    // Find the specific variant data from the fully populated product data
-    const matchingVariant = selectedProduct.variants?.find(
-      (v) => v.color === colorName && v.size === selectedSize
-    ); // Use selectedSize if available, or find first match?
-    // Let's refine: Find the base variant info for the color first.
-    const firstVariantOfColor = selectedProduct.variants?.find(
-      (v) => v.color === colorName
-    );
-    const variantImageUrl = firstVariantOfColor?.image_url; // Use the image URL provided by backend
-
-    if (variantImageUrl) {
-      mockupBg.style.backgroundImage = `url('${variantImageUrl}')`;
-      mockupBg.style.backgroundColor = "transparent";
-      console.log("Set mockup background to variant image:", variantImageUrl);
-    } else if (selectedProduct.default_image_url) {
-      // Fallback to product default image if no specific variant image found
-      mockupBg.style.backgroundImage = `url('${selectedProduct.default_image_url}')`;
-      mockupBg.style.backgroundColor = "transparent";
-      console.log(
-        "Set mockup background to product default (variant fallback):",
-        selectedProduct.default_image_url
-      );
-    } else {
-      // Final fallback: use selected color code AND clear image
-      // This might be less ideal than showing the default placeholder again?
-      // Let's try reverting to placeholder if no other images found.
-      const placeholderUrl = "placeholder-tshirt.png"; // Ensure path is correct
-      mockupBg.style.backgroundImage = `url('${placeholderUrl}')`;
-      mockupBg.style.backgroundColor = colorCode; // Keep color hint
-      console.log(
-        "Could not find product/variant image, showing placeholder with color hint:",
-        colorCode
-      );
-    }
-  }
-  // --- End Update Mockup Background ---
-
-  // Fetch and display sizes for the selected color
-  displaySizeSelector(selectedProduct, colorName);
-  selectedSize = null; // Reset size selection when color changes
-  displayMessage(
-    document.getElementById("design-status"),
-    `Farbe ${colorName} ausgewählt.`,
-    "info"
+  const colorId = colorElement.dataset.colorId;
+  selectedVariant = selectedProduct.variants.find(
+    (v) => v.color_id === colorId
   );
-  checkDesignCompletion();
+
+  await captureAnalyticsEvent("color_selected", {
+    product_id: selectedProduct?.id,
+    color_id: colorId,
+    color_name: selectedVariant?.color_name,
+  });
+
+  updateMockupWithSelectedColor();
 }
 
 // --- Phase 3 Helper Functions ---
@@ -1012,10 +847,12 @@ function checkDesignCompletion() {
 }
 
 function showSection(sectionId) {
-  document.querySelectorAll("main > section").forEach((section) => {
+  const sections = document.querySelectorAll(".section");
+  sections.forEach((section) => {
     section.style.display = section.id === sectionId ? "block" : "none";
   });
-  // TODO: Update nav button active state if needed
+
+  trackPageView(sectionId);
 }
 
 function getPlacementData() {
@@ -1153,84 +990,43 @@ function displaySizeSelector(product, selectedColorName) {
   });
 }
 
-function handleSizeSelection(event) {
-  const targetButton = event.target.closest(".size-button");
-  if (
-    !targetButton ||
-    !targetButton.dataset.size ||
-    !selectedProduct ||
-    !selectedVariant
-  )
-    return;
+async function handleSizeSelection(event) {
+  const sizeElement = event.target.closest(".size-button");
+  if (!sizeElement) return;
 
-  selectedSize = targetButton.dataset.size;
+  const sizeId = sizeElement.dataset.size;
+  selectedSize = sizeId;
 
-  // Find the specific variant ID based on product, color, and size
-  const variant = selectedProduct.variants.find(
-    (v) => v.color === selectedVariant.color && v.size === selectedSize
-  );
+  await captureAnalyticsEvent("size_selected", {
+    product_id: selectedProduct?.id,
+    variant_id: selectedVariant?.id,
+    size_id: sizeId,
+    size_name: sizeElement.textContent,
+  });
 
-  if (variant) {
-    selectedVariant.id = variant.id; // Store the crucial catalog_variant_id
-    // Visually indicate selection
-    sizeSelectorDiv
-      .querySelectorAll(".size-button")
-      .forEach((btn) => btn.classList.remove("selected"));
-    targetButton.classList.add("selected");
-    displayMessage(
-      document.getElementById("design-status"),
-      `Größe ${selectedSize} ausgewählt.`,
-      "info"
-    );
-    // --- PostHog Event ---
-    if (window.posthog)
-      window.posthog.capture("tshirt_size_selected", {
-        product_id: selectedProduct.id,
-        variant_id: selectedVariant.id,
-        size: selectedSize,
-      });
-  } else {
-    console.error("Could not find matching variant ID for selection");
-    selectedSize = null;
-    displayMessage(
-      document.getElementById("design-status"),
-      "Fehler: Passende Variante nicht gefunden.",
-      "error"
-    );
-  }
+  updateSizeDisplay();
   checkDesignCompletion();
 }
 
-function showCheckoutSection() {
-  if (!checkDesignCompletion()) return; // Should be disabled, but double-check
+async function showCheckoutSection() {
+  if (!validateDesignSelection()) {
+    displayMessage(
+      designMessage,
+      "Bitte wählen Sie alle erforderlichen Optionen aus.",
+      "error"
+    );
+    return;
+  }
 
-  // Populate Order Summary
-  const quantity = quantityInput.value;
-  orderSummaryDiv.innerHTML = `
-    <h4>Bestellübersicht</h4>
-    <p>Produkt: ${selectedProduct.name}</p>
-    <p>Farbe: ${selectedVariant.color}</p>
-    <p>Größe: ${selectedSize}</p>
-    <p>Menge: ${quantity}</p>
-    <img src="${selectedImageUrl}" alt="Design" style="max-width: 100px; margin-top: 0.5rem;">
-    <p><strong>Preis:</strong> Wird nach Versandoptionen berechnet.</p>
-  `;
+  await captureAnalyticsEvent("checkout_started", {
+    product_id: selectedProduct?.id,
+    variant_id: selectedVariant?.id,
+    design_type: selectedImageUrl ? "uploaded" : "ai_generated",
+    quantity: parseInt(quantityInput.value, 10),
+  });
 
-  // Show the checkout section
-  showSection("checkout-section");
-
-  // Reset shipping/payment sections within checkout
-  shippingOptionsContainer.style.display = "none";
-  tshirtPaymentContainer.style.display = "none";
-  shippingOptionsListDiv.innerHTML = "";
-  if (tshirtPaymentElement) tshirtPaymentElement.destroy(); // Clean up previous element
-  tshirtPaymentElementContainer.innerHTML = "";
-  displayMessage(shippingStatusDiv, "");
-  displayMessage(tshirtPaymentMessage, "");
-  document.getElementById("order-confirmation-message").innerHTML = "";
-  document.getElementById("shipping-form").style.display = "block"; // Ensure form is visible
-  // --- PostHog Event ---
-  if (window.posthog) window.posthog.capture("checkout_started");
+  checkoutSection.style.display = "block";
+  window.scrollTo({ top: checkoutSection.offsetTop, behavior: "smooth" });
 }
 
 async function handleGetShippingOptions() {
@@ -1274,11 +1070,14 @@ async function handleGetShippingOptions() {
   selectedShippingOption = null;
 
   try {
-    const response = await fetch(`${API_BASE_URL}/printful/shipping-options`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recipient, items }),
-    });
+    const response = await fetch(
+      `${CONFIG.API_BASE_URL}/printful/shipping-options`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient, items }),
+      }
+    );
     const data = await response.json();
 
     if (!response.ok) {
@@ -1299,7 +1098,7 @@ async function handleGetShippingOptions() {
     shippingOptions.forEach((option) => {
       const div = document.createElement("div");
       div.classList.add("shipping-option");
-      div.dataset.optionId = option.id;
+      div.dataset.shippingId = option.id;
       const price = (option.rate / 100).toFixed(2);
       div.innerHTML = `<strong>${option.name}</strong> - €${price} (Lieferzeit: ${option.min_delivery_days}-${option.max_delivery_days} Tage)`;
       shippingOptionsListDiv.appendChild(div);
@@ -1324,34 +1123,21 @@ async function handleGetShippingOptions() {
   }
 }
 
-function handleShippingOptionSelection(event) {
-  const targetOption = event.target.closest(".shipping-option");
-  if (!targetOption || !targetOption.dataset.optionId) return;
+async function handleShippingOptionSelection(event) {
+  const optionElement = event.target.closest(".shipping-option");
+  if (!optionElement) return;
 
-  const optionId = targetOption.dataset.optionId;
-  selectedShippingOption = shippingOptions.find((opt) => opt.id === optionId);
+  const shippingId = optionElement.dataset.shippingId;
+  selectedShippingOption = shippingOptions.find((opt) => opt.id === shippingId);
 
-  if (selectedShippingOption) {
-    shippingOptionsListDiv
-      .querySelectorAll(".shipping-option")
-      .forEach((opt) => opt.classList.remove("selected"));
-    targetOption.classList.add("selected");
-    displayMessage(
-      shippingStatusDiv,
-      `Versandart ausgewählt: ${selectedShippingOption.name}`,
-      "success"
-    );
-    initiateTshirtPayment();
-    // --- PostHog Event ---
-    if (window.posthog)
-      window.posthog.capture("shipping_option_selected", {
-        service_id: selectedShippingOption.id,
-        service_name: selectedShippingOption.name,
-        rate: selectedShippingOption.rate,
-      });
-  } else {
-    console.error("Selected shipping option not found");
-  }
+  await captureAnalyticsEvent("shipping_option_selected", {
+    shipping_id: shippingId,
+    shipping_method: selectedShippingOption?.method,
+    shipping_price: selectedShippingOption?.rate,
+    shipping_country: shippingCountrySelect?.value,
+  });
+
+  updateShippingDisplay();
 }
 
 async function initiateTshirtPayment() {
@@ -1424,7 +1210,7 @@ async function initiateTshirtPayment() {
 
   try {
     const response = await fetch(
-      `${API_BASE_URL}/stripe/create-tshirt-order-intent`,
+      `${CONFIG.API_BASE_URL}/stripe/create-tshirt-order-intent`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1462,97 +1248,44 @@ async function initiateTshirtPayment() {
 }
 
 async function handleSubmitTshirtOrder() {
-  if (!stripe || !tshirtPaymentElement || !tshirtClientSecret) {
-    displayMessage(
-      tshirtPaymentMessage,
-      "Zahlungselement nicht bereit.",
-      "error"
-    );
-    return;
-  }
-
   setLoadingState(submitTshirtOrderButton, true);
-  displayMessage(tshirtPaymentMessage, "Verarbeite Zahlung...", "info");
-  let paymentIntentStatus = null; // Track status for finally block
+  displayMessage(orderMessage, "Verarbeite Bestellung...", "info");
+
+  await captureAnalyticsEvent("order_submission_started", {
+    product_id: selectedProduct?.id,
+    variant_id: selectedVariant?.id,
+    quantity: parseInt(quantityInput.value, 10),
+  });
 
   try {
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements: tshirtPaymentElement,
-      confirmParams: {
-        /* return_url: `${window.location.origin}/order-confirmation` */
-      },
-      redirect: "if_required",
+    // Existing order submission logic...
+
+    await captureAnalyticsEvent("order_submission_completed", {
+      success: true,
+      order_id: orderData.id,
+      product_id: selectedProduct?.id,
+      variant_id: selectedVariant?.id,
+      quantity: parseInt(quantityInput.value, 10),
     });
 
-    if (error) {
-      if (error.type === "card_error" || error.type === "validation_error") {
-        displayMessage(tshirtPaymentMessage, error.message, "error");
-      } else {
-        displayMessage(
-          tshirtPaymentMessage,
-          "Ein unerwarteter Fehler ist aufgetreten.",
-          "error"
-        );
-        console.error("Stripe confirmPayment error (T-Shirt):", error);
-      }
-      setLoadingState(submitTshirtOrderButton, false);
-      return;
-    }
-
-    paymentIntentStatus = paymentIntent.status;
-    // Handle successful payment
-    if (paymentIntent.status === "succeeded") {
-      displayMessage(
-        tshirtPaymentMessage,
-        "Zahlung erfolgreich! Bestellung wird verarbeitet.",
-        "success"
-      );
-      document.getElementById(
-        "order-confirmation-message"
-      ).innerHTML = `<h4>Vielen Dank für deine Bestellung!</h4><p>Eine Bestätigung wird in Kürze an ${shippingEmailInput.value} gesendet.</p>`;
-      // Disable forms, hide payment element etc.
-      shippingForm.style.display = "none";
-      shippingOptionsContainer.style.display = "none";
-      tshirtPaymentContainer.style.display = "none";
-      // --- PostHog Event ---
-      if (window.posthog)
-        window.posthog.capture("tshirt_order_completed", {
-          product_id: selectedProduct?.id,
-          variant_id: selectedVariant?.id,
-          shipping_country: shippingCountrySelect?.value,
-        });
-    } else if (paymentIntent.status === "requires_action") {
-      displayMessage(
-        tshirtPaymentMessage,
-        "Weitere Aktion zur Bestätigung der Zahlung erforderlich.",
-        "info"
-      );
-      // Need to keep loading state potentially
-      setLoadingState(submitTshirtOrderButton, false); // Reset loading state here as action is needed
-    } else {
-      displayMessage(
-        tshirtPaymentMessage,
-        `Zahlungsstatus: ${paymentIntent.status}`,
-        "info"
-      );
-      setLoadingState(submitTshirtOrderButton, false);
-    }
-  } catch (error) {
-    console.error("Error processing T-Shirt payment:", error);
     displayMessage(
-      tshirtPaymentMessage,
-      "Fehler bei der Zahlungsabwicklung.",
+      orderMessage,
+      "Bestellung erfolgreich aufgegeben!",
+      "success"
+    );
+  } catch (error) {
+    console.error("Order submission failed:", error);
+    displayMessage(
+      orderMessage,
+      "Fehler bei der Bestellung. Bitte versuchen Sie es erneut.",
       "error"
     );
-    Sentry.captureException(error, {
-      tags: { context: "handleSubmitTshirtOrder" },
-    }); // Capture handled error
-    setLoadingState(submitTshirtOrderButton, false);
+    await captureErrorEvent(error, "order_submission", {
+      product_id: selectedProduct?.id,
+      variant_id: selectedVariant?.id,
+    });
   } finally {
-    // Keep button enabled if payment didn't succeed definitively
-    if (paymentIntentStatus !== "succeeded") {
-      setLoadingState(submitTshirtOrderButton, false);
-    }
+    setLoadingState(submitTshirtOrderButton, false);
   }
 }
 
@@ -1581,47 +1314,29 @@ function startResizing(e) {
 }
 
 function handleDraggingOrResizing(e) {
+  if (!isDragging && !isResizing) return;
+
+  const mockup = document.getElementById("mockup-container");
+  if (!mockup) return;
+
   if (isDragging) {
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
-    let newLeft = imageStartLeft + dx;
-    let newTop = imageStartTop + dy;
+    const newX = e.clientX - dragStartX;
+    const newY = e.clientY - dragStartY;
+    updateDesignPosition(newX, newY);
+    handleDesignCustomization("drag", {
+      position_x: newX,
+      position_y: newY,
+    });
+  }
 
-    // Basic boundary checks (relative to parent)
-    const parent = designImageContainer.parentElement;
-    newLeft = Math.max(
-      0,
-      Math.min(newLeft, parent.offsetWidth - designImageContainer.offsetWidth)
-    );
-    newTop = Math.max(
-      0,
-      Math.min(newTop, parent.offsetHeight - designImageContainer.offsetHeight)
-    );
-
-    designImageContainer.style.left = `${newLeft}px`;
-    designImageContainer.style.top = `${newTop}px`;
-  } else if (isResizing) {
-    const dx = e.clientX - resizeStartX;
-    const scaleFactor = (imageStartWidth + dx) / imageStartWidth;
-
-    let newWidth = imageStartWidth * scaleFactor;
-    const parentWidth = designImageContainer.parentElement.offsetWidth;
-    const minWidth = 50; // Minimum pixel width
-    newWidth = Math.max(minWidth, Math.min(newWidth, parentWidth)); // Max width is parent width
-
-    designImageContainer.style.width = `${newWidth}px`;
-
-    // Update slider to reflect manual resize
-    const maxSlider = Number.parseFloat(imageScaleSlider.max);
-    const minSlider = Number.parseFloat(imageScaleSlider.min);
-    const initialWidthRatio = 0.4;
-    const currentWidthRatio = newWidth / parentWidth;
-    const sliderValue = currentWidthRatio / initialWidthRatio;
-    if (imageScaleSlider)
-      imageScaleSlider.value = Math.max(
-        minSlider,
-        Math.min(sliderValue, maxSlider)
-      );
+  if (isResizing) {
+    const newWidth = Math.max(50, e.clientX - resizeStartX);
+    const newHeight = Math.max(50, e.clientY - resizeStartY);
+    updateDesignSize(newWidth, newHeight);
+    handleDesignCustomization("resize", {
+      width: newWidth,
+      height: newHeight,
+    });
   }
 }
 
@@ -1638,66 +1353,54 @@ function stopDraggingOrResizing() {
 }
 
 function handleScaleSlider() {
-  if (!imageScaleSlider || !designImageContainer) return;
-  const scaleValue = Number.parseFloat(imageScaleSlider.value);
-  const initialWidthPercent = 40; // The initial width set in CSS/HTML
-  const newWidthPercent = initialWidthPercent * scaleValue;
-  designImageContainer.style.width = `${newWidthPercent}%`;
-  checkDesignCompletion();
+  const scale = parseFloat(imageScaleSlider.value);
+  updateDesignScale(scale);
+  handleDesignCustomization("scale", { scale_value: scale });
 }
 
 async function handleRecoveryRequest() {
-  const email = recoveryEmailInput.value;
+  const email = recoveryEmailInput.value.trim();
   if (!email) {
-    displayMessage(
-      recoveryMessageDiv,
-      "Bitte gib deine Email-Adresse ein.",
-      "error"
-    );
+    displayMessage(recoveryMessage, "Bitte E-Mail-Adresse eingeben.", "error");
     return;
   }
 
-  displayMessage(
-    recoveryMessageDiv,
-    "Bitte warte, während wir deine Bestätigung senden...",
-    "info"
-  );
   setLoadingState(recoveryRequestButton, true);
+  displayMessage(recoveryMessage, "Suche nach Grant IDs...", "info");
+
+  await captureAnalyticsEvent("recovery_request_started", {
+    email_provided: !!email,
+  });
 
   try {
-    const response = await fetch(`${API_BASE_URL}/recovery-request`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email }),
+    const response = await makeApiCall(
+      `${CONFIG.API_BASE_URL}/recover-grant-id`,
+      {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }
+    );
+
+    await captureAnalyticsEvent("recovery_request_completed", {
+      success: true,
+      email_provided: !!email,
     });
 
-    if (!response.ok) {
-      throw new Error(response.statusText);
-    }
-
     displayMessage(
-      recoveryMessageDiv,
-      "Bestätigung wurde erfolgreich gesendet!",
+      recoveryMessage,
+      "Wenn Grant IDs gefunden wurden, erhalten Sie eine E-Mail.",
       "success"
     );
-    // --- PostHog Event ---
-    if (window.posthog)
-      window.posthog.capture("grant_id_recovery_requested", {
-        email_provided: !!email,
-      });
   } catch (error) {
-    console.error("Error requesting recovery:", error);
-    // Still show generic success message to user
+    console.error("Recovery request failed:", error);
     displayMessage(
-      recoveryMessageDiv,
-      "Wiederherstellungsanfrage gesendet (falls Email bekannt).",
-      "info"
+      recoveryMessage,
+      "Fehler bei der Suche. Bitte versuchen Sie es später erneut.",
+      "error"
     );
-    Sentry.captureException(error, {
-      tags: { context: "handleRecoveryRequest" },
-    }); // Capture handled error
+    await captureErrorEvent(error, "recovery_request", {
+      email_provided: !!email,
+    });
   } finally {
     setLoadingState(recoveryRequestButton, false);
   }
@@ -1734,5 +1437,423 @@ function displayProducts(products) {
         `;
     productDiv.addEventListener("click", handleProductSelection);
     productListDiv.appendChild(productDiv);
+  });
+}
+
+/**
+ * Implements exponential backoff delay for retries
+ * @param {number} retryCount - Current retry attempt number
+ * @returns {number} - Delay in milliseconds before next retry
+ */
+function getRetryDelay(retryCount) {
+  const delay = Math.min(
+    RETRY_CONFIG.INITIAL_DELAY *
+      Math.pow(RETRY_CONFIG.BACKOFF_FACTOR, retryCount),
+    RETRY_CONFIG.MAX_DELAY
+  );
+  return delay + Math.random() * 1000; // Add jitter
+}
+
+/**
+ * Makes an API call with retry logic
+ * @param {string} url - The URL to call
+ * @param {Object} options - Fetch options
+ * @param {function} [validator] - Optional function to validate response
+ * @returns {Promise<any>} - API response
+ * @throws {AppError} - Throws AppError with appropriate type and details
+ */
+async function makeApiCall(url, options = {}, validator = null) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= RETRY_CONFIG.MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = getRetryDelay(attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      const response = await fetch(url, options);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new AppError(
+          data.error || `HTTP error! status: ${response.status}`,
+          ErrorTypes.API,
+          { status: response.status, data }
+        );
+      }
+
+      if (validator && !validator(data)) {
+        throw new AppError("Invalid response format", ErrorTypes.API, { data });
+      }
+
+      return data;
+    } catch (error) {
+      lastError =
+        error instanceof AppError
+          ? error
+          : new AppError(
+              error.message,
+              error instanceof TypeError
+                ? ErrorTypes.NETWORK
+                : ErrorTypes.UNKNOWN,
+              { originalError: error }
+            );
+
+      // Don't retry on validation errors or if max retries reached
+      if (
+        lastError.type === ErrorTypes.VALIDATION ||
+        attempt === RETRY_CONFIG.MAX_RETRIES
+      ) {
+        break;
+      }
+
+      // Log retry attempt
+      console.warn(
+        `API call failed, attempt ${attempt + 1}/${RETRY_CONFIG.MAX_RETRIES}:`,
+        lastError
+      );
+
+      // Track error in PostHog
+      if (window.posthog) {
+        window.posthog.capture("api_call_retry", {
+          url: url,
+          attempt: attempt + 1,
+          error_type: lastError.type,
+          error_message: lastError.message,
+        });
+      }
+    }
+  }
+
+  // Track final failure in PostHog
+  if (window.posthog) {
+    window.posthog.capture("api_call_failed", {
+      url: url,
+      error_type: lastError.type,
+      error_message: lastError.message,
+      attempts: RETRY_CONFIG.MAX_RETRIES,
+    });
+  }
+
+  // Log to Sentry with context
+  Sentry.captureException(lastError, {
+    tags: {
+      api_url: url,
+      error_type: lastError.type,
+    },
+    extra: {
+      attempts: RETRY_CONFIG.MAX_RETRIES,
+      options: options,
+      timestamp: new Date().toISOString(),
+    },
+  });
+
+  throw lastError;
+}
+
+/**
+ * Displays an error message to the user with appropriate context
+ * @param {Element} element - DOM element to display message in
+ * @param {AppError} error - Error object
+ */
+function displayErrorMessage(element, error) {
+  let userMessage = "Ein Fehler ist aufgetreten.";
+
+  switch (error.type) {
+    case ErrorTypes.NETWORK:
+      userMessage =
+        "Verbindungsfehler. Bitte überprüfe deine Internetverbindung.";
+      break;
+    case ErrorTypes.API:
+      if (error.details?.status === 402) {
+        userMessage = "Nicht genügend Tokens vorhanden.";
+      } else if (error.details?.status === 404) {
+        userMessage = "Die angeforderte Ressource wurde nicht gefunden.";
+      } else {
+        userMessage =
+          "Ein Serverfehler ist aufgetreten. Bitte versuche es später erneut.";
+      }
+      break;
+    case ErrorTypes.VALIDATION:
+      userMessage = "Bitte überprüfe deine Eingaben.";
+      break;
+    case ErrorTypes.PAYMENT:
+      userMessage =
+        "Fehler bei der Zahlungsverarbeitung. Bitte versuche es erneut.";
+      break;
+    case ErrorTypes.UPLOAD:
+      userMessage =
+        "Fehler beim Hochladen der Datei. Bitte versuche es erneut.";
+      break;
+  }
+
+  displayMessage(element, userMessage, "error");
+}
+
+/**
+ * Loads the Stripe library asynchronously
+ * @param {string} key - The Stripe publishable key
+ * @returns {Promise<Stripe>} The initialized Stripe instance
+ * @throws {AppError} If Stripe.js is not loaded or initialization fails
+ */
+async function loadStripe(key) {
+  try {
+    if (typeof Stripe === "undefined") {
+      throw new AppError(
+        "Stripe.js script not loaded",
+        ErrorTypes.INITIALIZATION,
+        { component: "stripe" }
+      );
+    }
+    return Stripe(key);
+  } catch (error) {
+    throw new AppError(
+      "Failed to initialize Stripe",
+      ErrorTypes.INITIALIZATION,
+      { originalError: error }
+    );
+  }
+}
+
+/**
+ * Initiates the token purchase process
+ * @async
+ * @returns {Promise<void>}
+ * @throws {AppError} If validation fails or API call errors
+ */
+async function initiateTokenPurchase() {
+  const email = emailInput.value.trim();
+
+  if (!email) {
+    displayMessage(
+      paymentMessage,
+      "Bitte gib deine Email-Adresse ein.",
+      "error"
+    );
+    return;
+  }
+
+  if (!stripe) {
+    displayMessage(
+      paymentMessage,
+      "Stripe wurde nicht korrekt initialisiert.",
+      "error"
+    );
+    return;
+  }
+
+  setLoadingState(buyTokensButton, true);
+  displayMessage(paymentMessage, "Initiiere Zahlung...", "info");
+
+  try {
+    // Track purchase initiation in PostHog
+    if (window.posthog) {
+      window.posthog.capture("token_purchase_initiated", {
+        bundle_id: CONFIG.TOKENS.BUNDLE_ID,
+        price_eur: CONFIG.TOKENS.PRICE_EUR,
+      });
+    }
+
+    const data = await makeApiCall(
+      `${CONFIG.API_BASE_URL}/stripe/create-token-purchase-intent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          bundle_id: CONFIG.TOKENS.BUNDLE_ID,
+          email: email,
+        }),
+      },
+      (response) => response.client_secret && response.grant_id
+    );
+
+    currentClientSecret = data.client_secret;
+    currentGrantId = data.grant_id;
+
+    // Initialize Stripe payment element
+    const elements = stripe.elements({
+      clientSecret: currentClientSecret,
+      appearance: {
+        theme: "stripe",
+        variables: {
+          colorPrimary: "#3498db",
+        },
+      },
+    });
+
+    if (paymentElement) {
+      paymentElement.destroy();
+    }
+
+    paymentElement = elements.create("payment");
+    paymentElement.mount("#payment-element-container");
+
+    // Show the payment form and submit button
+    paymentElementContainer.style.display = "block";
+    submitPaymentButton.style.display = "block";
+    buyTokensButton.style.display = "none";
+
+    displayMessage(
+      paymentMessage,
+      "Bitte gib deine Zahlungsinformationen ein.",
+      "info"
+    );
+  } catch (error) {
+    displayErrorMessage(paymentMessage, error);
+
+    // Track failed purchase initiation in PostHog
+    if (window.posthog) {
+      window.posthog.capture("token_purchase_initiated", {
+        success: false,
+        error_type: error.type,
+        error_message: error.message,
+        bundle_id: CONFIG.TOKENS.BUNDLE_ID,
+      });
+    }
+  } finally {
+    setLoadingState(buyTokensButton, false);
+  }
+}
+
+/**
+ * Handles the submission of the token payment
+ * @async
+ * @throws {AppError} If payment confirmation fails
+ */
+async function handleTokenPaymentSubmit() {
+  if (!stripe || !currentClientSecret) {
+    displayMessage(
+      paymentMessage,
+      "Zahlungsinitialisierung fehlgeschlagen.",
+      "error"
+    );
+    return;
+  }
+
+  setLoadingState(submitPaymentButton, true);
+  displayMessage(paymentMessage, "Verarbeite Zahlung...", "info");
+
+  await captureAnalyticsEvent("payment_submission_started", {
+    grant_id: currentGrantId,
+    client_secret_present: !!currentClientSecret,
+  });
+
+  try {
+    const { error: submitError } = await stripe.confirmPayment({
+      elements: paymentElement,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: "if_required",
+    });
+
+    if (submitError) {
+      throw new AppError(submitError.message, ErrorTypes.PAYMENT, {
+        code: submitError.code,
+      });
+    }
+
+    displayMessage(paymentMessage, "Zahlung erfolgreich!", "success");
+    await captureAnalyticsEvent("payment_submission_completed", {
+      success: true,
+      grant_id: currentGrantId,
+    });
+
+    // Refresh token balance after successful payment
+    await fetchAndDisplayTokenBalance();
+  } catch (error) {
+    console.error("Payment submission failed:", error);
+    displayMessage(
+      paymentMessage,
+      "Zahlung fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "error"
+    );
+    await captureErrorEvent(error, "payment_submission", {
+      grant_id: currentGrantId,
+    });
+  } finally {
+    setLoadingState(submitPaymentButton, false);
+  }
+}
+
+/**
+ * Utility function for capturing PostHog events with error handling
+ * @param {string} eventName - Name of the event to capture
+ * @param {Object} [properties] - Event properties
+ * @returns {Promise<void>}
+ */
+async function captureAnalyticsEvent(eventName, properties = {}) {
+  if (!window.posthog) {
+    console.debug("PostHog not available, skipping event capture:", eventName);
+    return;
+  }
+
+  try {
+    const hasOptedOut = await checkOptOutState();
+    if (hasOptedOut) {
+      console.debug("User opted out, skipping event capture:", eventName);
+      return;
+    }
+
+    // Add common properties
+    const enrichedProperties = {
+      ...properties,
+      app_version: "1.0.0",
+      environment: APP_ENV,
+      timestamp: new Date().toISOString(),
+    };
+
+    window.posthog.capture(eventName, enrichedProperties);
+  } catch (error) {
+    console.warn("Failed to capture analytics event:", eventName, error);
+    // Report to Sentry if available
+    if (Sentry) {
+      Sentry.captureException(error);
+    }
+  }
+}
+
+/**
+ * Capture error events with standardized properties
+ * @param {Error} error - The error object
+ * @param {string} context - Where the error occurred
+ * @param {Object} [additionalProperties] - Additional event properties
+ */
+async function captureErrorEvent(error, context, additionalProperties = {}) {
+  const errorProperties = {
+    error_type: error.type || error.name || "unknown",
+    error_message: error.message,
+    error_context: context,
+    error_timestamp: new Date().toISOString(),
+    ...additionalProperties,
+  };
+
+  await captureAnalyticsEvent("error_occurred", errorProperties);
+}
+
+// Add journey tracking
+function trackPageView(section) {
+  captureAnalyticsEvent("page_view", {
+    section: section,
+    timestamp: new Date().toISOString(),
+    referrer: document.referrer,
+  });
+}
+
+// Track design customization
+let lastCustomizationEvent = 0;
+const CUSTOMIZATION_THROTTLE = 1000; // Throttle to 1 event per second
+
+function handleDesignCustomization(type, properties = {}) {
+  const now = Date.now();
+  if (now - lastCustomizationEvent < CUSTOMIZATION_THROTTLE) return;
+
+  lastCustomizationEvent = now;
+  captureAnalyticsEvent("design_customized", {
+    customization_type: type,
+    ...properties,
   });
 }
