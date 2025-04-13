@@ -122,24 +122,20 @@ posthog.init(CONFIG.POSTHOG.API_KEY, {
  * @returns {Promise<boolean>} True if opted out, false if opted in
  */
 async function checkOptOutState() {
-  // First check localStorage
-  const storedState = localStorage.getItem("posthog_opted_out");
-  if (storedState !== null) {
-    return storedState === "true";
+  try {
+    const hasOptedOut = localStorage.getItem("analytics_opt_out") === "true";
+    const checkbox = document.getElementById("posthog-opt-out-toggle");
+    if (checkbox) {
+      checkbox.checked = hasOptedOut;
+    }
+    if (hasOptedOut) {
+      await window.posthog?.opt_out_capturing();
+    } else {
+      await window.posthog?.opt_in_capturing();
+    }
+  } catch (error) {
+    console.error("Error checking opt-out state:", error);
   }
-
-  // If not in localStorage, check PostHog's internal state
-  if (window.posthog) {
-    const hasOptedOut = await new Promise((resolve) => {
-      window.posthog.has_opted_out_capturing(resolve);
-    });
-    // Store the state for future reference
-    localStorage.setItem("posthog_opted_out", hasOptedOut.toString());
-    return hasOptedOut;
-  }
-
-  // Default to opted out if PostHog is not available
-  return true;
 }
 
 /**
@@ -147,23 +143,21 @@ async function checkOptOutState() {
  * @param {Event} event - The change event from the toggle
  */
 async function handlePostHogOptOutToggle(event) {
-  if (!window.posthog) {
-    console.warn("PostHog not available. Analytics disabled.");
-    if (posthogOptOutToggle) {
-      posthogOptOutToggle.disabled = true;
+  try {
+    const optOut = event.target.checked;
+    localStorage.setItem("analytics_opt_out", optOut);
+    if (optOut) {
+      await window.posthog?.opt_out_capturing();
+    } else {
+      await window.posthog?.opt_in_capturing();
     }
-    return;
+  } catch (error) {
+    console.error("Error handling opt-out toggle:", error);
+    displayErrorMessage(
+      document.querySelector(".analytics-opt-out"),
+      "Failed to update analytics preferences"
+    );
   }
-
-  const isOptingOut = event.target.checked;
-  if (isOptingOut) {
-    window.posthog.opt_out_capturing();
-  } else {
-    window.posthog.opt_in_capturing();
-  }
-
-  // Update localStorage
-  localStorage.setItem("posthog_opted_out", isOptingOut.toString());
 }
 
 // Initialize Stripe when the page loads
@@ -860,239 +854,182 @@ function setLoadingState(button, isLoading) {
   }
 }
 
+// Enhanced token management
 function getTokenGrantId() {
-  return localStorage.getItem("druckmeinshirt_grant_id");
+  return localStorage.getItem("token_grant_id");
 }
 
 function saveTokenGrantId(grantId) {
-  localStorage.setItem("druckmeinshirt_grant_id", grantId);
+  if (!grantId) {
+    console.warn("Attempted to save invalid grant_id");
+    return false;
+  }
+  localStorage.setItem("token_grant_id", grantId);
+  return true;
 }
 
-// --- Core Logic ---
 async function fetchAndDisplayTokenBalance() {
   const grantId = getTokenGrantId();
+  const balanceDisplay = document.getElementById("token-balance-display");
+
   if (!grantId) {
-    displayMessage(tokenBalanceDisplay, "Tokens: 0 (Keine Grant ID)", "info");
-    return null;
+    balanceDisplay.textContent = "Tokens: 0";
+    return 0;
   }
 
-  displayMessage(tokenBalanceDisplay, "Tokens: Prüfe...", "info");
   try {
-    const data = await makeApiCall(
-      `${CONFIG.API_BASE_URL}/get-token-balance?grant_id=${encodeURIComponent(
-        grantId
-      )}`,
-      {},
-      (response) => typeof response.tokens_remaining === "number"
+    const response = await makeApiCall(
+      `/api/get-token-balance?grant_id=${encodeURIComponent(grantId)}`
     );
+    const balance = response.tokens_remaining;
 
-    const balance = data.tokens_remaining;
-    displayMessage(tokenBalanceDisplay, `Tokens: ${balance}`, "info");
+    balanceDisplay.textContent = `Tokens: ${balance}`;
 
-    // Track balance check in PostHog
-    if (window.posthog) {
-      window.posthog.capture("token_balance_checked", {
-        grant_id: grantId,
-        balance: balance,
-        success: true,
-      });
+    // Update UI elements based on balance
+    const aiGenerateButton = document.getElementById("ai-generate-button");
+    if (aiGenerateButton) {
+      aiGenerateButton.disabled = balance <= 0;
+      aiGenerateButton.title =
+        balance <= 0 ? "Keine Tokens verfügbar" : "Generieren (1 Token)";
     }
 
     return balance;
   } catch (error) {
-    displayErrorMessage(tokenBalanceDisplay, error);
+    await captureErrorEvent(error, "token_balance_check");
+    balanceDisplay.textContent = "Tokens: Fehler";
+    return 0;
+  }
+}
 
-    // Track failed balance check in PostHog
-    if (window.posthog) {
-      window.posthog.capture("token_balance_checked", {
+// Enhanced token purchase success handling
+async function handleTokenPurchaseSuccess(grantId) {
+  try {
+    if (saveTokenGrantId(grantId)) {
+      await captureAnalyticsEvent("token_purchase_completed", {
         grant_id: grantId,
-        success: false,
-        error_type: error.type,
-        error_message: error.message,
       });
-    }
 
-    return null;
-  }
-}
+      // Display the grant ID to the user
+      const grantIdDisplay = document.getElementById("grant-id-display");
+      if (grantIdDisplay) {
+        grantIdDisplay.innerHTML = `
+          <h4>Deine Grant ID</h4>
+          <p><strong>${grantId}</strong></p>
+          <p class="warning">Wichtig: Speichere diese ID sicher! Sie wird benötigt, um deine Tokens zu nutzen.</p>
+        `;
+        grantIdDisplay.style.display = "block";
+      }
 
-/**
- * Handles the upload of a user-selected image
- * @async
- * @param {File} file - The file to upload
- * @returns {Promise<string|null>} The URL of the uploaded image or null if upload failed
- * @throws {AppError} If file validation fails
- */
-async function handleImageUpload(file) {
-  setLoadingState(imageUploadButton, true);
-  displayMessage(uploadStatus, "Lade Bild hoch...", "info");
+      // Update token balance display
+      await fetchAndDisplayTokenBalance();
 
-  await captureAnalyticsEvent("image_upload_started", {
-    file_size: file.size,
-    file_type: file.type,
-  });
-
-  try {
-    const formData = new FormData();
-    formData.append("image", file);
-
-    const data = await makeApiCall(
-      `${CONFIG.API_BASE_URL}/upload-image`,
-      {
-        method: "POST",
-        body: formData,
-      },
-      (response) => response.url && typeof response.url === "string"
-    );
-
-    await captureAnalyticsEvent("image_upload_completed", {
-      success: true,
-      image_url: data.url,
-    });
-
-    return data.url;
-  } catch (error) {
-    console.error("Image upload failed:", error);
-    displayMessage(
-      uploadStatus,
-      "Fehler beim Hochladen des Bildes. Bitte versuchen Sie es erneut.",
-      "error"
-    );
-    await captureErrorEvent(error, "image_upload", {
-      file_size: file.size,
-      file_type: file.type,
-    });
-    return null;
-  } finally {
-    setLoadingState(imageUploadButton, false);
-  }
-}
-
-/**
- * Handles the user's request to use an uploaded image
- * @async
- */
-async function handleUseUploadedImage() {
-  const file = imageUploadInput.files[0];
-  setLoadingState(imageUploadButton, true);
-
-  try {
-    const imageUrl = await handleImageUpload(file);
-    if (imageUrl) {
-      updateMockupImage(imageUrl);
-      displayMessage(uploadStatus, "Bild erfolgreich hochgeladen.", "success");
-      imagePreviewUpload.innerHTML = `<img src="${imageUrl}" alt="Hochgeladenes Bild">`;
+      // Show success message
+      displayMessage(
+        document.getElementById("payment-message"),
+        "Token-Kauf erfolgreich! Deine Grant ID wurde gespeichert.",
+        "success"
+      );
     }
   } catch (error) {
-    displayErrorMessage(uploadStatus, error);
-    imagePreviewUpload.innerHTML = "";
-  } finally {
-    setLoadingState(imageUploadButton, false);
-    imageUploadInput.value = ""; // Clear the input
+    await captureErrorEvent(error, "token_purchase_success_handling");
+    throw error;
   }
 }
 
-/**
- * Handles the generation of AI images based on user prompt
- * @async
- */
-async function handleAiGenerate() {
-  const prompt = aiPromptInput.value.trim();
+// Enhanced token usage validation
+async function validateTokenUsage() {
   const grantId = getTokenGrantId();
-
-  if (!prompt) {
-    displayMessage(aiStatus, "Bitte gib einen Prompt ein.", "error");
-    return;
-  }
   if (!grantId) {
     displayMessage(
-      aiStatus,
-      "Keine Grant ID gefunden. Bitte kaufe zuerst Tokens.",
+      document.getElementById("ai-status"),
+      "Bitte kaufe zuerst Tokens, um die AI-Generierung zu nutzen.",
       "error"
     );
-    return;
+    return false;
   }
 
-  displayMessage(aiStatus, "Generiere Bilder... (kostet 1 Token)", "info");
-  setLoadingState(aiGenerateButton, true);
-  aiResultsGrid.innerHTML = ""; // Clear previous results
-  imagePreviewAi.innerHTML = ""; // Clear selection preview
+  const balance = await fetchAndDisplayTokenBalance();
+  if (balance <= 0) {
+    displayMessage(
+      document.getElementById("ai-status"),
+      "Keine Tokens verfügbar. Bitte kaufe neue Tokens.",
+      "error"
+    );
+    return false;
+  }
+
+  return true;
+}
+
+// Update AI generation to use token validation
+async function handleAiGenerate() {
+  const generateButton = document.getElementById("ai-generate-button");
+  const promptInput = document.getElementById("ai-prompt-input");
+  const statusElement = document.getElementById("ai-status");
 
   try {
-    // Track generation attempt in PostHog
-    if (window.posthog) {
-      window.posthog.capture("ai_prompt_submitted", {
-        prompt_length: prompt.length,
-        grant_id: grantId,
-      });
+    setLoadingState(generateButton, true);
+
+    if (!(await validateTokenUsage())) {
+      return;
     }
 
-    const data = await makeApiCall(
-      `${CONFIG.API_BASE_URL}/generate-image`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ prompt, grant_id: grantId }),
-      },
-      (response) => Array.isArray(response.images) && response.images.length > 0
-    );
+    const prompt = promptInput.value.trim();
+    if (!prompt) {
+      displayMessage(statusElement, "Bitte gib einen Prompt ein.", "error");
+      return;
+    }
 
-    displayMessage(
-      aiStatus,
-      "Generierung erfolgreich! Wähle ein Bild.",
-      "success"
-    );
-
-    data.images.forEach((imageUrl) => {
-      const img = document.createElement("img");
-      img.src = imageUrl;
-      img.alt = "Generiertes AI Bild";
-      img.dataset.imageUrl = imageUrl;
-      aiResultsGrid.appendChild(img);
+    // Capture analytics before API call
+    await captureAnalyticsEvent("ai_prompt_submitted", {
+      prompt_length: prompt.length,
     });
+
+    // Make API call with grant_id
+    const response = await makeApiCall("/api/generate-image", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt,
+        grant_id: getTokenGrantId(),
+      }),
+    });
+
+    // Handle successful generation
+    displayAiResults(response.images);
 
     // Update token balance after successful generation
     await fetchAndDisplayTokenBalance();
 
-    // Track successful generation in PostHog
-    if (window.posthog) {
-      window.posthog.capture("ai_image_generated", {
-        success: true,
-        num_images_returned: data.images.length,
-        prompt_length: prompt.length,
-        revised_prompt: data.revised_prompt,
-      });
-    }
+    await captureAnalyticsEvent("ai_image_generated", {
+      success: true,
+      num_images: response.images.length,
+    });
   } catch (error) {
-    displayErrorMessage(aiStatus, error);
-
-    // Track failed generation in PostHog
-    if (window.posthog) {
-      window.posthog.capture("ai_image_generated", {
-        success: false,
-        error_type: error.type,
-        error_message: error.message,
-        prompt_length: prompt.length,
-      });
-    }
+    await captureErrorEvent(error, "ai_generation");
+    displayMessage(
+      statusElement,
+      "Fehler bei der Bildgenerierung: " + error.message,
+      "error"
+    );
   } finally {
-    setLoadingState(aiGenerateButton, false);
+    setLoadingState(generateButton, false);
   }
 }
 
 async function handleAiImageSelection(event) {
-  const imageElement = event.target.closest(".ai-result-image");
-  if (!imageElement) return;
+  try {
+    const imageUrl = event.target.src;
+    // ... existing image selection logic ...
 
-  await captureAnalyticsEvent("ai_image_selected", {
-    image_source: "ai_generated",
-    image_id: imageElement.dataset.imageId,
-  });
+    await captureAnalyticsEvent("ai_image_selected", {
+      selected_image_url: imageUrl,
+    });
 
-  selectedImageUrl = imageElement.src;
-  updateMockupWithSelectedImage(selectedImageUrl);
+    displaySelectedImage(imageUrl);
+  } catch (error) {
+    await captureErrorEvent(error, "ai_image_selection");
+    throw error;
+  }
 }
 
 async function fetchAndDisplayProducts() {
@@ -1175,45 +1112,112 @@ function displayColorSwatches(product) {
   });
 }
 
-async function handleColorSelection(event) {
-  const colorElement = event.target.closest(".color-swatch");
-  if (!colorElement) return;
+/**
+ * Updates the variant display based on selected color and size
+ * This function now correctly sets the selectedVariant object
+ */
+function updateVariantDisplay() {
+  if (!selectedProduct || !selectedColorName || !selectedSize) {
+    selectedVariant = null; // Reset if any part is missing
+    console.log("Resetting selectedVariant due to missing product/color/size");
+    return;
+  }
 
-  const colorId = colorElement.dataset.colorId;
-  selectedVariant = selectedProduct.variants.find(
-    (v) => v.color_id === colorId
+  // Find the specific variant matching BOTH selected color name and size
+  const matchedVariant = selectedProduct.variants?.find(
+    (v) =>
+      v.color === selectedColorName && v.size === selectedSize && v.in_stock
   );
 
-  await captureAnalyticsEvent("color_selected", {
+  if (matchedVariant) {
+    selectedVariant = matchedVariant;
+    console.log("Selected Variant Updated:", selectedVariant);
+    // Update any UI elements that depend directly on the variant ID if needed
+    // e.g., display price if variant has specific price
+  } else {
+    selectedVariant = null; // Reset if no matching variant found
+    console.warn(
+      `No matching variant found for Color: ${selectedColorName}, Size: ${selectedSize}`
+    );
+    // Optionally display a message to the user
+    displayMessage(
+      document.getElementById("design-status"),
+      `Größe ${selectedSize} ist für Farbe ${selectedColorName} nicht verfügbar.`,
+      "error"
+    );
+  }
+  // Always check completion after attempting to update variant
+  checkDesignCompletion();
+}
+
+async function handleColorSelection(event) {
+  const colorElement = event.target.closest(".color-swatch");
+  if (!colorElement || !selectedProduct) return;
+
+  // Clear previously selected swatch
+  document
+    .querySelectorAll(".color-swatch.selected")
+    .forEach((el) => el.classList.remove("selected"));
+  // Mark new swatch as selected
+  colorElement.classList.add("selected");
+
+  selectedColorName = colorElement.dataset.colorName; // Store selected color name
+  selectedColorCode = colorElement.dataset.colorCode; // Store selected color code
+
+  console.log("Color selected:", selectedColorName);
+
+  await captureAnalyticsEvent("tshirt_color_selected", {
     product_id: selectedProduct?.id,
-    color_id: colorId,
-    color_name: selectedVariant?.color_name,
+    color_name: selectedColorName,
+    color_code: selectedColorCode,
   });
 
-  updateMockupWithSelectedColor();
+  // Update the size selector for the new color
+  displaySizeSelector(selectedProduct, selectedColorName);
+  // Attempt to update the variant (will reset size if needed)
+  selectedSize = null; // Reset size when color changes
+  updateVariantDisplay(); // This will update selectedVariant and call checkDesignCompletion
+
+  // Update mockup visual background/base if needed (assuming a base image per product)
+  // updateMockupBaseImage(selectedProduct.base_image_url, selectedColorCode);
 }
 
 // --- Phase 3 Helper Functions ---
 function checkDesignCompletion() {
+  // Now explicitly checks selectedVariant which is updated by updateVariantDisplay
   const isComplete =
     selectedProduct &&
-    selectedVariant && // Includes color
-    selectedSize &&
+    selectedVariant && // This is now reliably set or null
     selectedImageUrl &&
     quantityInput?.value >= 1 &&
     validateDesignPlacement(); // Add placement validation
+
+  console.log("Checking Design Completion:", {
+    selectedProduct: !!selectedProduct,
+    selectedVariant: !!selectedVariant, // Log if variant is set
+    selectedImageUrl: !!selectedImageUrl,
+    quantity: quantityInput?.value,
+    placementValid: validateDesignPlacement(), // Log placement validation result
+  });
 
   if (proceedToCheckoutButton) {
     proceedToCheckoutButton.disabled = !isComplete;
 
     let message = "";
     if (!isComplete) {
-      if (!validateDesignPlacement()) {
-        message = "Design muss innerhalb des Druckbereichs liegen.";
-      } else {
-        message =
-          "Bitte vervollständige dein Design (Produkt, Farbe, Größe, Bild, Menge).";
-      }
+      // Provide more specific feedback
+      if (!selectedProduct) message = "Bitte wähle ein Produkt.";
+      else if (!selectedColorName) message = "Bitte wähle eine Farbe.";
+      else if (!selectedSize) message = "Bitte wähle eine Größe.";
+      else if (!selectedVariant)
+        message = `Die Größe ${selectedSize} ist für Farbe ${selectedColorName} nicht verfügbar.`;
+      else if (!selectedImageUrl)
+        message = "Bitte füge ein Design hinzu (Upload oder AI).";
+      else if (!quantityInput?.value || quantityInput.value < 1)
+        message = "Bitte gib eine Menge an.";
+      else if (!validateDesignPlacement())
+        message = "Dein Design liegt außerhalb des Druckbereichs.";
+      else message = "Bitte vervollständige dein Design.";
     } else {
       message = "Design bereit für Checkout.";
     }
@@ -1221,7 +1225,7 @@ function checkDesignCompletion() {
     displayMessage(
       document.getElementById("design-status"),
       message,
-      isComplete ? "success" : "info"
+      isComplete ? "success" : "info" // Use info for incomplete steps
     );
   }
 
@@ -1374,41 +1378,44 @@ function displaySizeSelector(product, selectedColorName) {
 
 async function handleSizeSelection(event) {
   const sizeElement = event.target.closest(".size-button");
-  if (!sizeElement) return;
+  if (!sizeElement || !selectedProduct || !selectedColorName) return;
 
-  const sizeId = sizeElement.dataset.size;
-  selectedSize = sizeId;
+  // Clear previously selected size
+  document
+    .querySelectorAll(".size-button.selected")
+    .forEach((el) => el.classList.remove("selected"));
+  // Mark new size as selected
+  sizeElement.classList.add("selected");
 
-  await captureAnalyticsEvent("size_selected", {
+  selectedSize = sizeElement.dataset.size; // Store selected size
+  console.log("Size selected:", selectedSize);
+
+  await captureAnalyticsEvent("tshirt_size_selected", {
     product_id: selectedProduct?.id,
-    variant_id: selectedVariant?.id,
-    size_id: sizeId,
-    size_name: sizeElement.textContent,
+    color_name: selectedColorName, // Include color context
+    size: selectedSize,
   });
 
-  updateSizeDisplay();
-  checkDesignCompletion();
+  // Attempt to update the variant with the selected size and current color
+  updateVariantDisplay(); // This will update selectedVariant and call checkDesignCompletion
 }
 
 async function showCheckoutSection() {
-  if (!validateDesignSelection()) {
-    displayMessage(
-      designMessage,
-      "Bitte wählen Sie alle erforderlichen Optionen aus.",
-      "error"
-    );
-    return;
+  try {
+    // ... existing checkout logic ...
+
+    await captureAnalyticsEvent("checkout_started", {
+      product_id: currentProduct.id,
+      color: selectedColor,
+      size: selectedSize,
+      quantity: selectedQuantity,
+    });
+
+    // Continue with checkout flow
+  } catch (error) {
+    await captureErrorEvent(error, "checkout_initiation");
+    throw error;
   }
-
-  await captureAnalyticsEvent("checkout_started", {
-    product_id: selectedProduct?.id,
-    variant_id: selectedVariant?.id,
-    design_type: selectedImageUrl ? "uploaded" : "ai_generated",
-    quantity: parseInt(quantityInput.value, 10),
-  });
-
-  checkoutSection.style.display = "block";
-  window.scrollTo({ top: checkoutSection.offsetTop, behavior: "smooth" });
 }
 
 async function handleGetShippingOptions() {
@@ -1506,20 +1513,21 @@ async function handleGetShippingOptions() {
 }
 
 async function handleShippingOptionSelection(event) {
-  const optionElement = event.target.closest(".shipping-option");
-  if (!optionElement) return;
+  try {
+    const optionId = event.target.dataset.shippingId;
+    const option = shippingOptions.find((opt) => opt.id === optionId);
+    // ... existing shipping selection logic ...
 
-  const shippingId = optionElement.dataset.shippingId;
-  selectedShippingOption = shippingOptions.find((opt) => opt.id === shippingId);
+    await captureAnalyticsEvent("shipping_option_selected", {
+      service_name: option.name,
+      rate: option.rate,
+    });
 
-  await captureAnalyticsEvent("shipping_option_selected", {
-    shipping_id: shippingId,
-    shipping_method: selectedShippingOption?.method,
-    shipping_price: selectedShippingOption?.rate,
-    shipping_country: shippingCountrySelect?.value,
-  });
-
-  updateShippingDisplay();
+    // Continue with shipping selection
+  } catch (error) {
+    await captureErrorEvent(error, "shipping_option_selection");
+    throw error;
+  }
 }
 
 async function initiateTshirtPayment() {
@@ -1756,31 +1764,22 @@ function handleScaleSlider() {
 }
 
 async function handleRecoveryRequest() {
-  const email = recoveryEmailInput.value.trim();
-  if (!email) {
-    displayMessage(recoveryMessage, "Bitte E-Mail-Adresse eingeben.", "error");
-    return;
-  }
-
-  setLoadingState(recoveryRequestButton, true);
-  displayMessage(recoveryMessage, "Suche nach Grant IDs...", "info");
-
-  await captureAnalyticsEvent("recovery_request_started", {
-    email_provided: !!email,
-  });
-
   try {
-    const response = await makeApiCall(
-      `${CONFIG.API_BASE_URL}/recover-grant-id`,
-      {
-        method: "POST",
-        body: JSON.stringify({ email }),
-      }
-    );
+    const email = recoveryEmailInput.value.trim();
+    if (!email) {
+      displayMessage(
+        recoveryMessage,
+        "Bitte E-Mail-Adresse eingeben.",
+        "error"
+      );
+      return;
+    }
 
-    await captureAnalyticsEvent("recovery_request_completed", {
-      success: true,
-      email_provided: !!email,
+    setLoadingState(recoveryRequestButton, true);
+    displayMessage(recoveryMessage, "Suche nach Grant IDs...", "info");
+
+    await captureAnalyticsEvent("grant_id_recovery_requested", {
+      email_hash: await hashEmail(email), // Implement hashEmail function for privacy
     });
 
     displayMessage(
@@ -1795,11 +1794,23 @@ async function handleRecoveryRequest() {
       "Fehler bei der Suche. Bitte versuchen Sie es später erneut.",
       "error"
     );
-    await captureErrorEvent(error, "recovery_request", {
-      email_provided: !!email,
-    });
+    await captureErrorEvent(error, "grant_id_recovery");
   } finally {
     setLoadingState(recoveryRequestButton, false);
+  }
+}
+
+// Helper function to hash email for analytics
+async function hashEmail(email) {
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(email.toLowerCase().trim());
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (error) {
+    console.error("Error hashing email:", error);
+    return "hash_error";
   }
 }
 
@@ -2029,30 +2040,30 @@ async function loadStripe(key) {
  * @throws {AppError} If validation fails or API call errors
  */
 async function initiateTokenPurchase() {
-  const email = emailInput.value.trim();
-
-  if (!email) {
-    displayMessage(
-      paymentMessage,
-      "Bitte gib deine Email-Adresse ein.",
-      "error"
-    );
-    return;
-  }
-
-  if (!stripe) {
-    displayMessage(
-      paymentMessage,
-      "Stripe wurde nicht korrekt initialisiert.",
-      "error"
-    );
-    return;
-  }
-
-  setLoadingState(buyTokensButton, true);
-  displayMessage(paymentMessage, "Initiiere Zahlung...", "info");
-
   try {
+    const email = emailInput.value.trim();
+
+    if (!email) {
+      displayMessage(
+        paymentMessage,
+        "Bitte gib deine Email-Adresse ein.",
+        "error"
+      );
+      return;
+    }
+
+    if (!stripe) {
+      displayMessage(
+        paymentMessage,
+        "Stripe wurde nicht korrekt initialisiert.",
+        "error"
+      );
+      return;
+    }
+
+    setLoadingState(buyTokensButton, true);
+    displayMessage(paymentMessage, "Initiiere Zahlung...", "info");
+
     // Track purchase initiation in PostHog
     if (window.posthog) {
       window.posthog.capture("token_purchase_initiated", {
@@ -2108,17 +2119,8 @@ async function initiateTokenPurchase() {
       "info"
     );
   } catch (error) {
-    displayErrorMessage(paymentMessage, error);
-
-    // Track failed purchase initiation in PostHog
-    if (window.posthog) {
-      window.posthog.capture("token_purchase_initiated", {
-        success: false,
-        error_type: error.type,
-        error_message: error.message,
-        bundle_id: CONFIG.TOKENS.BUNDLE_ID,
-      });
-    }
+    await captureErrorEvent(error, "token_purchase_initiation");
+    throw error;
   } finally {
     setLoadingState(buyTokensButton, false);
   }

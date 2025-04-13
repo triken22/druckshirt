@@ -78,11 +78,7 @@
     <header>
       <div class="container header-content">
         <div class="logo">
-          <img
-            src="logo.png"
-            alt="DruckMeinShirt Logo"
-            onerror="this.src='https://placeholder.com/150x50?text=Logo'"
-          />
+          <!-- <img src="logo.png" alt="DruckMeinShirt Logo" onerror="this.src='https://placeholder.com/150x50?text=Logo'" /> -->
           <h1>DruckMeinShirt</h1>
         </div>
         <nav>
@@ -101,101 +97,147 @@
     </header>
 
     <main class="container">
-      <section id="design-section" style="display: block">
+      <section id="design-section" class="section" style="display: block">
         <h2>Gestalte dein T-Shirt</h2>
         <div class="design-layout">
+          <!-- Design Controls Column -->
           <div class="design-controls">
-            <h3>1. Produkt Wählen</h3>
-            <div id="product-list" class="selection-list">
-              <!-- Product items will be loaded here -->
-              <p>Lade Produkte...</p>
-            </div>
-
-            <h3>2. Farbe Wählen</h3>
-            <div id="color-swatches" class="swatch-container">
-              <!-- Color swatches loaded here -->
-              <p>Wähle zuerst ein Produkt</p>
-            </div>
-
-            <h3>3. Design Hinzufügen</h3>
-            <div class="tab-container">
-              <div class="tab-buttons">
-                <button
-                  class="tab-button active button"
-                  data-target="upload-tab"
-                >
-                  Bild Hochladen
-                </button>
-                <button class="tab-button button" data-target="ai-tab">
-                  AI Generieren
-                </button>
+            <!-- Step 1: Product -->
+            <div class="design-step">
+              <h3>1. Produkt Wählen</h3>
+              <div id="product-list" class="selection-list">
+                <p>Lade Produkte...</p>
               </div>
-              <div class="tab-contents">
-                <div id="upload-tab" class="tab-content active">
-                  <div class="form-group">
-                    <label for="image-upload-input">PNG/JPEG hochladen:</label>
-                    <input
-                      type="file"
-                      id="image-upload-input"
-                      accept=".png, .jpg, .jpeg"
-                    />
-                  </div>
-                  <div id="image-preview-upload" class="image-preview"></div>
-                  <div id="upload-status" class="status-message"></div>
+            </div>
+
+            <!-- Step 2: Color -->
+            <div class="design-step">
+              <h3>2. Farbe Wählen</h3>
+              <div id="color-swatches" class="swatch-container">
+                <p>Wähle zuerst ein Produkt</p>
+              </div>
+            </div>
+
+            <!-- Step 3: Add Design -->
+            <div class="design-step">
+              <h3>3. Design Hinzufügen</h3>
+              <div class="tab-container">
+                <div class="tab-buttons">
                   <button
-                    id="image-upload-button"
-                    class="button button-primary"
+                    class="tab-button active button"
+                    data-target="upload-tab"
                   >
-                    Bild Anwenden
+                    Bild Hochladen
+                  </button>
+                  <button class="tab-button button" data-target="ai-tab">
+                    AI Generieren
                   </button>
                 </div>
-                <div id="ai-tab" class="tab-content">
-                  <div class="form-group">
-                    <label for="ai-prompt-input">Prompt eingeben:</label>
-                    <textarea
-                      id="ai-prompt-input"
-                      rows="3"
-                      placeholder="z.B. Ein süßer Shiba Inu Astronaut im Weltraum"
-                    ></textarea>
-                    <small
-                      >Hinweis: Aktuell keine Optionen für Stil, Größe,
-                      etc.</small
+                <div class="tab-contents">
+                  <div id="upload-tab" class="tab-content active">
+                    <div class="form-group">
+                      <label for="image-upload-input"
+                        >PNG/JPEG hochladen:</label
+                      >
+                      <input
+                        type="file"
+                        id="image-upload-input"
+                        accept=".png, .jpg, .jpeg"
+                      />
+                    </div>
+                    <div id="image-preview-upload" class="image-preview"></div>
+                    <div id="upload-status" class="status-message"></div>
+                    <button
+                      id="image-upload-button"
+                      class="button button-primary"
                     >
+                      Bild Anwenden
+                    </button>
                   </div>
-                  <button id="ai-generate-button" class="button button-primary">
-                    Generieren (1 Token)
-                  </button>
-                  <div id="ai-status" class="status-message"></div>
-                  <div id="ai-results-grid" class="results-grid">
-                    <!-- AI results loaded here -->
+                  <div id="ai-tab" class="tab-content">
+                    <div class="form-group">
+                      <label for="ai-prompt-input">Prompt eingeben:</label>
+                      <textarea
+                        id="ai-prompt-input"
+                        rows="3"
+                        placeholder="z.B. Ein süßer Shiba Inu Astronaut im Weltraum"
+                      ></textarea>
+                      <small
+                        >Hinweis: Aktuell keine Optionen für Stil, Größe,
+                        etc.</small
+                      >
+                    </div>
+                    <button
+                      id="ai-generate-button"
+                      class="button button-primary"
+                    >
+                      Generieren (1 Token)
+                    </button>
+                    <div id="ai-status" class="status-message"></div>
+                    <div id="ai-results-grid" class="results-grid"></div>
+                    <div id="image-preview-ai" class="image-preview"></div>
                   </div>
-                  <div id="image-preview-ai" class="image-preview"></div>
                 </div>
               </div>
             </div>
 
-            <h3>4. Größe & Menge</h3>
-            <div class="form-group">
-              <label>Größe:</label>
-              <div id="size-selector" class="size-selector">
-                <!-- Size buttons loaded here -->
-                <p>Wähle zuerst Farbe</p>
+            <!-- Step 4: Size & Quantity -->
+            <div class="design-step">
+              <h3>4. Größe & Menge</h3>
+              <div class="size-group form-group">
+                <label>Größe:</label>
+                <div id="size-selector" class="size-selector">
+                  <p>Wähle zuerst Farbe</p>
+                </div>
+              </div>
+              <div class="quantity-group form-group">
+                <label for="quantity-input">Menge:</label>
+                <input
+                  type="number"
+                  id="quantity-input"
+                  value="1"
+                  min="1"
+                  max="10"
+                />
               </div>
             </div>
-            <div class="form-group">
-              <label for="quantity-input">Menge:</label>
-              <input
-                type="number"
-                id="quantity-input"
-                value="1"
-                min="1"
-                max="10"
-              />
-            </div>
 
-            <h3>5. Design Anpassen</h3>
-            <div class="form-group">
-              <label for="image-scale-slider">Größe Anpassen:</label>
+            <!-- Step 5: Adjust Design (Moved near mockup conceptually) -->
+            <!-- Controls moved to mockup area below -->
+
+            <!-- Checkout Button & Status -->
+            <div class="design-actions">
+              <div id="design-status" class="status-message"></div>
+              <button
+                id="proceed-to-checkout-button"
+                class="button button-primary"
+                disabled
+              >
+                Zum Checkout
+              </button>
+            </div>
+          </div>
+
+          <!-- Mockup Preview Column -->
+          <div class="mockup-container">
+            <div class="mockup-area">
+              <!-- Base T-shirt image would go here if needed, or just white bg -->
+              <!-- <img src="path/to/base_tshirt.png" alt="T-shirt Base" class="mockup-base-image"> -->
+              <div class="mockup-overlay">
+                <div class="print-area-guide" style="display: none"></div>
+                <!-- Initially hidden -->
+                <div
+                  id="design-image-container"
+                  class="design-image-container"
+                  style="display: none"
+                >
+                  <!-- JS inserts <img...> here -->
+                  <div class="resize-handle"></div>
+                </div>
+              </div>
+            </div>
+            <div class="mockup-controls">
+              <label for="image-scale-slider">Größe:</label>
               <input
                 type="range"
                 id="image-scale-slider"
@@ -204,51 +246,22 @@
                 step="0.05"
                 value="1"
               />
+              <button id="rotate-left" class="button" title="Rotate Left">
+                ↶
+              </button>
+              <button id="rotate-right" class="button" title="Rotate Right">
+                ↷
+              </button>
+              <button id="reset-position" class="button" title="Reset Position">
+                Reset
+              </button>
+              <small>(Design kann auch direkt verschoben werden)</small>
             </div>
-            <small
-              >(Design kann auch direkt auf dem Mockup verschoben werden)</small
-            >
-
-            <div id="design-status" class="status-message"></div>
-            <button
-              id="proceed-to-checkout-button"
-              class="button button-primary"
-              disabled
-            >
-              Zum Checkout
-            </button>
-          </div>
-
-          <div class="mockup-container">
-            <div class="mockup-image-overlay">
-              <div class="print-area-guide"></div>
-              <div class="design-container">
-                <img
-                  src=""
-                  alt="Selected design"
-                  id="selected-design"
-                  style="display: none"
-                />
-                <div class="design-controls">
-                  <button id="rotate-left" title="Rotate Left">↶</button>
-                  <button id="rotate-right" title="Rotate Right">↷</button>
-                  <button id="reset-position" title="Reset Position">
-                    Reset
-                  </button>
-                </div>
-              </div>
-            </div>
-            <img
-              src=""
-              alt="Product mockup"
-              id="product-mockup"
-              style="display: none"
-            />
           </div>
         </div>
       </section>
 
-      <section id="tokens-section" style="display: none">
+      <section id="tokens-section" class="section" style="display: none">
         <h2>Tokens Kaufen</h2>
         <p>Kaufe Tokens, um die AI Bildgenerierung zu nutzen.</p>
         <div class="token-purchase-box card">
@@ -269,7 +282,11 @@
           </button>
           <div id="payment-message" class="status-message"></div>
           <!-- Stripe Payment Element -->
-          <div id="payment-element-container" class="stripe-container"></div>
+          <div
+            id="payment-element-container"
+            class="stripe-container"
+            style="display: none"
+          ></div>
           <button
             id="submit-payment-button"
             class="button button-primary"
@@ -277,19 +294,24 @@
           >
             Bezahlen
           </button>
-          <div id="grant-id-display" class="grant-id-box"></div>
+          <div
+            id="grant-id-display"
+            class="grant-id-box"
+            style="display: none"
+          ></div>
         </div>
       </section>
 
-      <section id="checkout-section" style="display: none">
+      <section id="checkout-section" class="section" style="display: none">
         <h2>Checkout</h2>
         <div class="checkout-layout">
           <div class="order-summary-box card">
+            <h3>Bestellübersicht</h3>
             <div id="order-summary">
               <!-- Order summary loaded here -->
+              <p>Bitte vervollständige dein Design.</p>
             </div>
           </div>
-
           <div class="checkout-details card">
             <form id="shipping-form">
               <h3>Lieferadresse</h3>
@@ -339,14 +361,12 @@
               </button>
               <div id="shipping-status" class="status-message"></div>
             </form>
-
             <div id="shipping-options-container" style="display: none">
               <h3>Versandoptionen</h3>
               <div id="shipping-options-list" class="selection-list">
                 <!-- Shipping options loaded here -->
               </div>
             </div>
-
             <div
               id="tshirt-payment-container"
               style="display: none"
@@ -362,13 +382,12 @@
               </button>
               <div id="tshirt-payment-message" class="status-message"></div>
             </div>
-
             <div id="order-confirmation-message"></div>
           </div>
         </div>
       </section>
 
-      <section id="recovery-section" style="display: none">
+      <section id="recovery-section" class="section" style="display: none">
         <h2>Grant ID Wiederherstellen</h2>
         <p>
           Hast du deine Grant ID verloren? Gib deine Email-Adresse ein, mit der
