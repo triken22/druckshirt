@@ -321,19 +321,37 @@ document.addEventListener("DOMContentLoaded", async () => {
 // --- Helper Functions ---
 function displayMessage(element, message, type = "info") {
   if (!element) return;
-  element.textContent = message;
-  element.style.color =
-    type === "error" ? "red" : type === "success" ? "green" : "black";
+  // Clear previous types
+  element.classList.remove("error", "success", "info");
+
+  if (message) {
+    element.textContent = message;
+    element.classList.add(type); // Add the type class (error, success, info)
+    element.style.display = "block";
+  } else {
+    element.textContent = "";
+    element.style.display = "none";
+  }
 }
 
 function setLoadingState(button, isLoading) {
   if (!button) return;
-  button.disabled = isLoading;
-  button.textContent = isLoading
-    ? "Verarbeite..."
-    : button.dataset.originalText || button.textContent;
-  if (!isLoading && button.dataset.originalText) {
+  if (isLoading) {
+    // Store original text if not already stored
+    if (!button.dataset.originalText) {
+      button.dataset.originalText = button.textContent;
+    }
+    button.disabled = true;
+    // Add spinner or change text (basic text change for now)
+    button.textContent = "Verarbeite...";
+    button.classList.add("loading"); // Add class for potential spinner styling
+  } else {
+    button.disabled = false;
+    // Restore original text
+    button.textContent = button.dataset.originalText || "Aktion Ausführen";
+    // Clear original text storage
     delete button.dataset.originalText;
+    button.classList.remove("loading");
   }
 }
 
