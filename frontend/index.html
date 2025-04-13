@@ -3,14 +3,425 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DruckMeinShirt</title>
-    <!-- Add CSS links here -->
+    <title>DruckMeinShirt - Design & Order</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="src/style.css" />
+    <!-- Load Stripe.js early -->
+    <script src="https://js.stripe.com/v3/" defer></script>
+    <!-- PostHog Snippet -->
+    <script>
+      !(function (t, e) {
+        var o, n, p, r;
+        e.__SV ||
+          ((window.posthog = e),
+          (e._i = []),
+          (e.init = function (i, s, a) {
+            function g(t, e) {
+              var o = e.split(".");
+              2 == o.length && ((t = t[o[0]]), (e = o[1])),
+                (t[e] = function () {
+                  t.push([e].concat(Array.prototype.slice.call(arguments, 0)));
+                });
+            }
+            ((p = t.createElement("script")).type = "text/javascript"),
+              (p.crossOrigin = "anonymous"),
+              (p.async = !0),
+              (p.src =
+                s.api_host.replace(".i.posthog.com", "-assets.i.posthog.com") +
+                "/static/array.js"),
+              (r = t.getElementsByTagName("script")[0]).parentNode.insertBefore(
+                p,
+                r
+              );
+            var u = e;
+            for (
+              void 0 !== a ? (u = e[a] = []) : (a = "posthog"),
+                u.people = u.people || [],
+                u.toString = function (t) {
+                  var e = "posthog";
+                  return (
+                    "posthog" !== a && (e += "." + a), t || (e += " (stub)"), e
+                  );
+                },
+                u.people.toString = function () {
+                  return u.toString(1) + ".people (stub)";
+                },
+                o =
+                  "init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug getPageViewId captureTraceFeedback captureTraceMetric".split(
+                    " "
+                  ),
+                n = 0;
+              n < o.length;
+              n++
+            )
+              g(u, o[n]);
+            e._i.push([i, s, a]);
+          }),
+          (e.__SV = 1));
+      })(document, window.posthog || []);
+      posthog.init("phc_8ipgZfvHLUHGZ6J8b9AlkviiEzib4c77qhN69T9x4pK", {
+        api_host: "https://us.i.posthog.com",
+        person_profiles: "identified_only", // or 'always'
+        // Opt-out check will be handled in main.js after init
+      });
+    </script>
+    <!-- End PostHog Snippet -->
   </head>
   <body>
-    <h1>DruckMeinShirt - Coming Soon!</h1>
+    <header>
+      <div class="container header-content">
+        <div class="logo">
+          <!-- <img src="logo.png" alt="DruckMeinShirt Logo" onerror="this.src='https://placeholder.com/150x50?text=Logo'" /> -->
+          <h1>DruckMeinShirt</h1>
+        </div>
+        <nav>
+          <button class="nav-button button active" data-target="design-section">
+            Design
+          </button>
+          <button class="nav-button button" data-target="tokens-section">
+            Tokens Kaufen
+          </button>
+          <button class="nav-button button" data-target="recovery-section">
+            Grant ID Wiederherstellen
+          </button>
+          <span id="token-balance-display">Tokens: Lade...</span>
+        </nav>
+      </div>
+    </header>
 
-    <!-- Add main app container here -->
+    <main class="container">
+      <section id="design-section" class="section" style="display: block">
+        <h2>Gestalte dein T-Shirt</h2>
+        <div class="design-layout">
+          <!-- Design Controls Column -->
+          <div class="design-controls">
+            <!-- Step 1: Product -->
+            <div class="design-step">
+              <h3>1. Produkt Wählen</h3>
+              <div id="product-list" class="selection-list">
+                <p>Lade Produkte...</p>
+              </div>
+            </div>
 
-    <script type="module" src="/src/main.js"></script>
+            <!-- Step 2: Color -->
+            <div class="design-step">
+              <h3>2. Farbe Wählen</h3>
+              <div id="color-swatches" class="swatch-container">
+                <p>Wähle zuerst ein Produkt</p>
+              </div>
+            </div>
+
+            <!-- Step 3: Add Design -->
+            <div class="design-step">
+              <h3>3. Design Hinzufügen</h3>
+              <div class="tab-container">
+                <div class="tab-buttons">
+                  <button
+                    class="tab-button active button"
+                    data-target="upload-tab"
+                  >
+                    Bild Hochladen
+                  </button>
+                  <button class="tab-button button" data-target="ai-tab">
+                    AI Generieren
+                  </button>
+                </div>
+                <div class="tab-contents">
+                  <div id="upload-tab" class="tab-content active">
+                    <div class="form-group">
+                      <label for="image-upload-input"
+                        >PNG/JPEG hochladen:</label
+                      >
+                      <input
+                        type="file"
+                        id="image-upload-input"
+                        accept=".png, .jpg, .jpeg"
+                      />
+                    </div>
+                    <div id="image-preview-upload" class="image-preview"></div>
+                    <div id="upload-status" class="status-message"></div>
+                    <button
+                      id="image-upload-button"
+                      class="button button-primary"
+                    >
+                      Bild Anwenden
+                    </button>
+                  </div>
+                  <div id="ai-tab" class="tab-content">
+                    <div class="form-group">
+                      <label for="ai-prompt-input">Prompt eingeben:</label>
+                      <textarea
+                        id="ai-prompt-input"
+                        rows="3"
+                        placeholder="z.B. Ein süßer Shiba Inu Astronaut im Weltraum"
+                      ></textarea>
+                      <small
+                        >Hinweis: Aktuell keine Optionen für Stil, Größe,
+                        etc.</small
+                      >
+                    </div>
+                    <button
+                      id="ai-generate-button"
+                      class="button button-primary"
+                    >
+                      Generieren (1 Token)
+                    </button>
+                    <div id="ai-status" class="status-message"></div>
+                    <div id="ai-results-grid" class="results-grid"></div>
+                    <div id="image-preview-ai" class="image-preview"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 4: Size & Quantity -->
+            <div class="design-step">
+              <h3>4. Größe & Menge</h3>
+              <div class="size-group form-group">
+                <label>Größe:</label>
+                <div id="size-selector" class="size-selector">
+                  <p>Wähle zuerst Farbe</p>
+                </div>
+              </div>
+              <div class="quantity-group form-group">
+                <label for="quantity-input">Menge:</label>
+                <input
+                  type="number"
+                  id="quantity-input"
+                  value="1"
+                  min="1"
+                  max="10"
+                />
+              </div>
+            </div>
+
+            <!-- Step 5: Adjust Design (Moved near mockup conceptually) -->
+            <!-- Controls moved to mockup area below -->
+
+            <!-- Checkout Button & Status -->
+            <div class="design-actions">
+              <div id="design-status" class="status-message"></div>
+              <button
+                id="proceed-to-checkout-button"
+                class="button button-primary"
+                disabled
+              >
+                Zum Checkout
+              </button>
+            </div>
+          </div>
+
+          <!-- Mockup Preview Column -->
+          <div class="mockup-container">
+            <div class="mockup-area">
+              <!-- Base T-shirt image would go here if needed, or just white bg -->
+              <!-- <img src="path/to/base_tshirt.png" alt="T-shirt Base" class="mockup-base-image"> -->
+              <div class="mockup-overlay">
+                <div class="print-area-guide" style="display: none"></div>
+                <!-- Initially hidden -->
+                <div
+                  id="design-image-container"
+                  class="design-image-container"
+                  style="display: none"
+                >
+                  <!-- JS inserts <img...> here -->
+                  <div class="resize-handle"></div>
+                </div>
+              </div>
+            </div>
+            <div class="mockup-controls">
+              <label for="image-scale-slider">Größe:</label>
+              <input
+                type="range"
+                id="image-scale-slider"
+                min="0.2"
+                max="2"
+                step="0.05"
+                value="1"
+              />
+              <button id="rotate-left" class="button" title="Rotate Left">
+                ↶
+              </button>
+              <button id="rotate-right" class="button" title="Rotate Right">
+                ↷
+              </button>
+              <button id="reset-position" class="button" title="Reset Position">
+                Reset
+              </button>
+              <small>(Design kann auch direkt verschoben werden)</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tokens-section" class="section" style="display: none">
+        <h2>Tokens Kaufen</h2>
+        <p>Kaufe Tokens, um die AI Bildgenerierung zu nutzen.</p>
+        <div class="token-purchase-box card">
+          <h3>Token Paket</h3>
+          <p>10 AI Generation Credits</p>
+          <p><strong>Preis: €5.00</strong></p>
+          <div class="form-group">
+            <label for="email-input">Email für Grant ID:</label>
+            <input
+              type="email"
+              id="email-input"
+              placeholder="deine.email@beispiel.de"
+              required
+            />
+          </div>
+          <button id="buy-tokens-button" class="button button-primary">
+            Kauf Initiieren
+          </button>
+          <div id="payment-message" class="status-message"></div>
+          <!-- Stripe Payment Element -->
+          <div
+            id="payment-element-container"
+            class="stripe-container"
+            style="display: none"
+          ></div>
+          <button
+            id="submit-payment-button"
+            class="button button-primary"
+            style="display: none"
+          >
+            Bezahlen
+          </button>
+          <div
+            id="grant-id-display"
+            class="grant-id-box"
+            style="display: none"
+          ></div>
+        </div>
+      </section>
+
+      <section id="checkout-section" class="section" style="display: none">
+        <h2>Checkout</h2>
+        <div class="checkout-layout">
+          <div class="order-summary-box card">
+            <h3>Bestellübersicht</h3>
+            <div id="order-summary">
+              <!-- Order summary loaded here -->
+              <p>Bitte vervollständige dein Design.</p>
+            </div>
+          </div>
+          <div class="checkout-details card">
+            <form id="shipping-form">
+              <h3>Lieferadresse</h3>
+              <div class="form-group">
+                <label for="shipping-name">Name:</label>
+                <input type="text" id="shipping-name" required />
+              </div>
+              <div class="form-group">
+                <label for="shipping-email">Email (für Updates):</label>
+                <input type="email" id="shipping-email" required />
+              </div>
+              <div class="form-group">
+                <label for="shipping-address1">Adresse Zeile 1:</label>
+                <input type="text" id="shipping-address1" required />
+              </div>
+              <div class="form-group">
+                <label for="shipping-address2"
+                  >Adresse Zeile 2 (Optional):</label
+                >
+                <input type="text" id="shipping-address2" />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="shipping-city">Stadt:</label>
+                  <input type="text" id="shipping-city" required />
+                </div>
+                <div class="form-group">
+                  <label for="shipping-zip">PLZ:</label>
+                  <input type="text" id="shipping-zip" required />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="shipping-country">Land:</label>
+                <select id="shipping-country" required>
+                  <option value="DE">Deutschland</option>
+                  <option value="AT">Österreich</option>
+                  <option value="CH">Schweiz</option>
+                  <!-- Add other relevant EU countries if needed -->
+                </select>
+              </div>
+              <button
+                type="button"
+                id="get-shipping-button"
+                class="button button-primary"
+              >
+                Versandoptionen Anzeigen
+              </button>
+              <div id="shipping-status" class="status-message"></div>
+            </form>
+            <div id="shipping-options-container" style="display: none">
+              <h3>Versandoptionen</h3>
+              <div id="shipping-options-list" class="selection-list">
+                <!-- Shipping options loaded here -->
+              </div>
+            </div>
+            <div
+              id="tshirt-payment-container"
+              style="display: none"
+              class="stripe-container"
+            >
+              <h3>Zahlung</h3>
+              <div id="tshirt-payment-element-container"></div>
+              <button
+                id="submit-tshirt-order-button"
+                class="button button-primary"
+              >
+                T-Shirt Bestellen & Bezahlen
+              </button>
+              <div id="tshirt-payment-message" class="status-message"></div>
+            </div>
+            <div id="order-confirmation-message"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="recovery-section" class="section" style="display: none">
+        <h2>Grant ID Wiederherstellen</h2>
+        <p>
+          Hast du deine Grant ID verloren? Gib deine Email-Adresse ein, mit der
+          du Tokens gekauft hast, und wir senden sie dir erneut zu.
+        </p>
+        <div class="recovery-box card">
+          <div class="form-group">
+            <label for="recovery-email-input">Email-Adresse:</label>
+            <input type="email" id="recovery-email-input" required />
+          </div>
+          <button id="recovery-request-button" class="button button-primary">
+            Wiederherstellung Anfordern
+          </button>
+          <div id="recovery-message" class="status-message"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container footer-content">
+        <p>&copy; 2024 DruckMeinShirt</p>
+        <div class="legal-links">
+          <a href="impressum.html">Impressum</a> |
+          <a href="datenschutz.html">Datenschutz</a>
+        </div>
+        <div class="analytics-opt-out">
+          <input type="checkbox" id="posthog-opt-out-toggle" />
+          <label for="posthog-opt-out-toggle"
+            >Anonymes Analytics-Tracking deaktivieren</label
+          >
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>

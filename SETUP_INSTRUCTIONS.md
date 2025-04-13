@@ -23,7 +23,7 @@ You need a Cloudflare account. Most resources can be created via the Cloudflare 
     {
       "AllowedOrigins": [
         "https://investorio.ai",
-        "https://investorio-staging.pages.dev",
+        "https://druckshirt-frontend.pages.dev",
         "http://localhost:3000"
       ],
       "AllowedMethods": ["GET", "PUT", "POST"],

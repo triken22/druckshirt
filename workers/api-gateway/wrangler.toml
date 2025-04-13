@@ -1,57 +1,102 @@
-# Top-level configuration
-name = "druckmeinshirt-api-gateway"
+# Top-level configuration (Defaults, potentially used by wrangler dev)
+name = "druckshirt-api-gateway"
 main = "src/index.ts"
-compatibility_date = "2024-05-15"
+compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
+upload_source_maps = true
 
-# Bindings
-kv_namespaces = [
-  { binding = "STATE_KV", id = "0cc66f93317c4798af20561bb8c4aa23", preview_id = "0cc66f93317c4798af20561bb8c4aa23" } # Using Staging ID for preview
-]
+# Explicit build step
+[build]
+command = "npm install"
+# Remove rollup options externalizing toucan-js as it's removed
+# [build.rollup_options]
+# external = ["toucan-js"]
 
-r2_buckets = [
-  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-staging", preview_bucket_name = "druckmeinshirt-images-staging" }
-]
+# Bindings (Defaults/Local Dev)
+[[kv_namespaces]]
+binding = "STATE_KV"
+id = "b5d117a32d2a4d2c880cc5537acfdbc9" # Updated: Local ID
+
+[[r2_buckets]]
+binding = "IMAGE_BUCKET"
+bucket_name = "druckmeinshirt-images-local" # Updated: Local Name
 
 [[queues.producers]]
-queue = "token-fulfillment-queue-staging"
+queue = "druckshirt-token-fulfillment" # Default/local queue name
 binding = "TOKEN_QUEUE"
 
 [[queues.producers]]
-queue = "order-fulfillment-queue-staging"
+queue = "druckshirt-order-fulfillment" # Default/local queue name
 binding = "ORDER_QUEUE"
 
 # Environment: Staging
 [env.staging]
-name = "druckmeinshirt-api-gateway-staging"
-kv_namespaces = [
-  { binding = "STATE_KV", id = "0cc66f93317c4798af20561bb8c4aa23" }
-]
-r2_buckets = [
-  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-staging" }
-]
+name = "druckshirt-api-gateway-staging"
+
+# Define vars explicitly for staging
+[env.staging.vars]
+# Add localhost AND your staging frontend URL, comma-separated
+ALLOWED_ORIGINS = "http://localhost:3000,https://druckshirt-frontend.pages.dev" # Removed trailing comma
+R2_PUBLIC_URL_PREFIX = "<YOUR_STAGING_R2_PUBLIC_URL_HERE>" # Replace this
+
+# Define bindings explicitly for staging (use specific staging resources)
+[[env.staging.kv_namespaces]]
+binding = "STATE_KV"
+id = "0cc66f93317c4798af20561bb8c4aa23" # Updated: Staging ID
+
+[[env.staging.r2_buckets]]
+binding = "IMAGE_BUCKET"
+bucket_name = "druckmeinshirt-images-staging" # Updated: Staging Name
+
 [[env.staging.queues.producers]]
-queue = "token-fulfillment-queue-staging"
+queue = "druckshirt-token-fulfillment-staging" # Staging queue name
 binding = "TOKEN_QUEUE"
+
 [[env.staging.queues.producers]]
-queue = "order-fulfillment-queue-staging"
+queue = "druckshirt-order-fulfillment-staging" # Staging queue name
 binding = "ORDER_QUEUE"
+
+# Secrets for staging would be set via:
+# `wrangler secret put <SECRET_NAME> --env staging`
 
 # Environment: Production
 [env.production]
-name = "druckmeinshirt-api-gateway-production"
+name = "druckshirt-api-gateway-production"
+
+# --- Production Values ---
 kv_namespaces = [
-  { binding = "STATE_KV", id = "59d2638e44714737923ac9c12452209b" }
+  { binding = "STATE_KV", id = "59d2638e44714737923ac9c12452209b" } # Verified Production ID
 ]
 r2_buckets = [
-  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-production" }
+  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-production" } # Verified Production Name
 ]
 [[env.production.queues.producers]]
-queue = "token-fulfillment-queue-production"
+queue = "token-fulfillment-queue-production" # Verified Production Queue
 binding = "TOKEN_QUEUE"
 [[env.production.queues.producers]]
-queue = "order-fulfillment-queue-production"
+queue = "order-fulfillment-queue-production" # Verified Production Queue
 binding = "ORDER_QUEUE"
+# --- End Production Values ---
+
+# --- Add production variables here ---
+[env.production.vars]
+ALLOWED_ORIGINS = "<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Replace <...> (No localhost needed for prod)
+R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>" # Replace <...>
+
+# Variables (Top-Level - Defaults for local dev)
+# Usually overridden by environment, but sets default for `wrangler dev` if no --env specified
+[vars]
+# Add localhost AND your PRODUCTION frontend URL, comma-separated
+ALLOWED_ORIGINS = "http://localhost:3000,<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Replace <...>
+R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>" # Replace this
+
+# Secrets are set via GitHub Actions during deploy or manually via wrangler secret put
+# DO NOT add secrets directly to this file.
+
+# Variables
+# [vars]
+# ALLOWED_ORIGINS = "http://localhost:3000,<YOUR_PRODUCTION_FRONTEND_URL_HERE>"
+# R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>"
 
 # Secrets are set via GitHub Actions during deploy
 # [vars]
