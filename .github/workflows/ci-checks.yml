@@ -37,13 +37,20 @@ jobs:
   security:
     runs-on: ubuntu-latest
     name: Security Checks
+    # Add permissions for CodeQL to write security events
+    permissions:
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript # Covers JS and TS
+
       - name: Run CodeQL
         uses: github/codeql-action/analyze@v3
-        # with:
-        #   languages: "javascript" # Adjust if using TypeScript primarily
+        # No 'with' needed here usually if specified in init
 
   documentation:
     runs-on: ubuntu-latest

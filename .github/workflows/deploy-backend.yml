@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - develop
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Deploy Workers
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,30 +30,24 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # If using private packages
 
-      - name: Determine Environment
-        id: get_env
-        run: echo "CLOUDFLARE_ENV=${{ github.ref_name == 'main' && 'production' || 'staging' }}" >> $GITHUB_ENV
-
       - name: Deploy API Gateway Worker
         id: deploy_api_gateway
-        run: wrangler deploy --env $CLOUDFLARE_ENV
+        run: wrangler deploy
         working-directory: ./workers/api-gateway
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Pass secrets required by the worker
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           PRINTFUL_API_KEY: ${{ secrets.PRINTFUL_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          # Add Sentry DSN and other Sentry-related secrets if needed
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           POSTHOG_HOST_URL: ${{ secrets.POSTHOG_HOST_URL }}
 
       - name: Upload API Gateway Source Maps to Sentry
-        if: steps.deploy_api_gateway.outcome == 'success' && env.CLOUDFLARE_ENV != 'local' && env.SENTRY_AUTH_TOKEN != ''
+        if: steps.deploy_api_gateway.outcome == 'success' && secrets.SENTRY_AUTH_TOKEN != ''
         working-directory: ./workers/api-gateway
         run: |
           npm install --no-save @sentry/cli@latest
@@ -67,7 +59,6 @@ jobs:
           npx sentry-cli releases new "$SENTRY_RELEASE"
           npx sentry-cli releases set-commits "$SENTRY_RELEASE" --auto
           echo "Uploading API Gateway source maps..."
-          # Adjust include path if necessary based on wrangler output
           npx sentry-cli releases files "$SENTRY_RELEASE" upload-sourcemaps --url-prefix '~/' --validate ./dist
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -75,22 +66,20 @@ jobs:
 
       - name: Deploy Queue Consumer Worker
         id: deploy_queue_consumer
-        run: wrangler deploy --env $CLOUDFLARE_ENV
+        run: wrangler deploy
         working-directory: ./workers/queue-consumer
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Pass secrets required by the worker
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           PRINTFUL_API_KEY: ${{ secrets.PRINTFUL_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          # Add Sentry DSN and other Sentry-related secrets if needed
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           POSTHOG_HOST_URL: ${{ secrets.POSTHOG_HOST_URL }}
 
       - name: Upload Queue Consumer Source Maps to Sentry
-        if: steps.deploy_queue_consumer.outcome == 'success' && env.CLOUDFLARE_ENV != 'local' && env.SENTRY_AUTH_TOKEN != ''
+        if: steps.deploy_queue_consumer.outcome == 'success' && secrets.SENTRY_AUTH_TOKEN != ''
         working-directory: ./workers/queue-consumer
         run: |
           npm install --no-save @sentry/cli@latest
@@ -105,7 +94,7 @@ jobs:
           SENTRY_LOG_LEVEL: debug
 
       - name: Finalize Sentry Release
-        if: (steps.deploy_api_gateway.outcome == 'success' || steps.deploy_queue_consumer.outcome == 'success') && env.CLOUDFLARE_ENV != 'local' && env.SENTRY_AUTH_TOKEN != ''
+        if: (steps.deploy_api_gateway.outcome == 'success' || steps.deploy_queue_consumer.outcome == 'success') && secrets.SENTRY_AUTH_TOKEN != ''
         run: |
           npm install --no-save @sentry/cli@latest
           export SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}

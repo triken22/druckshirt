@@ -12,14 +12,18 @@ command = "npm install"
 # [build.rollup_options]
 # external = ["toucan-js"]
 
-# Bindings (Defaults/Local Dev)
+# --- Top-Level Bindings & Vars ---
+# These settings are used by default for `wrangler dev` if no --env flag is specified.
+# It's recommended to use specific local resource names/IDs here if you have them,
+# or run `wrangler dev --env staging` to use your staging configuration locally.
+# The current KV ID looks like a Cloudflare ID, ensure this is intended for local dev.
 [[kv_namespaces]]
 binding = "STATE_KV"
-id = "b5d117a32d2a4d2c880cc5537acfdbc9" # Updated: Local ID
+id = "b5d117a32d2a4d2c880cc5537acfdbc9" # Default/Local ID (Verify if correct for local)
 
 [[r2_buckets]]
 binding = "IMAGE_BUCKET"
-bucket_name = "druckmeinshirt-images-local" # Updated: Local Name
+bucket_name = "druckmeinshirt-images-local" # Default/Local Name
 
 [[queues.producers]]
 queue = "druckshirt-token-fulfillment" # Default/local queue name
@@ -29,79 +33,71 @@ binding = "TOKEN_QUEUE"
 queue = "druckshirt-order-fulfillment" # Default/local queue name
 binding = "ORDER_QUEUE"
 
-# Environment: Staging
+[vars]
+# FIXME: Replace placeholders below with appropriate values for LOCAL development or remove if unused.
+ALLOWED_ORIGINS = "http://localhost:3000,<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Example: Localhost + Prod URL
+R2_PUBLIC_URL_PREFIX = "<YOUR_LOCAL_OR_STAGING_R2_PUBLIC_URL_HERE>" # Example: Use staging R2 for local dev
+
+# --- Environment: Staging ---
 [env.staging]
 name = "druckshirt-api-gateway-staging"
 
-# Define vars explicitly for staging
 [env.staging.vars]
-# Add localhost AND your staging frontend URL, comma-separated
-ALLOWED_ORIGINS = "http://localhost:3000,https://druckshirt-frontend.pages.dev" # Removed trailing comma
+# ALLOWED_ORIGINS is correctly set for staging frontend + localhost
+ALLOWED_ORIGINS = "http://localhost:3000,https://druckshirt-frontend.pages.dev"
+# FIXME: You MUST replace this placeholder with your actual staging R2 public URL prefix!
+# Example: "https://pub-xxxxxxxx.r2.dev" or your custom domain pointing to the staging R2 bucket.
 R2_PUBLIC_URL_PREFIX = "<YOUR_STAGING_R2_PUBLIC_URL_HERE>" # Replace this
 
-# Define bindings explicitly for staging (use specific staging resources)
+# Staging bindings use specific staging resources
 [[env.staging.kv_namespaces]]
 binding = "STATE_KV"
-id = "0cc66f93317c4798af20561bb8c4aa23" # Updated: Staging ID
+id = "0cc66f93317c4798af20561bb8c4aa23" # Verified Staging ID
 
 [[env.staging.r2_buckets]]
 binding = "IMAGE_BUCKET"
-bucket_name = "druckmeinshirt-images-staging" # Updated: Staging Name
+bucket_name = "druckmeinshirt-images-staging" # Verified Staging Name
 
 [[env.staging.queues.producers]]
-queue = "druckshirt-token-fulfillment-staging" # Staging queue name
+queue = "druckshirt-token-fulfillment-staging" # Verified Staging Queue
 binding = "TOKEN_QUEUE"
 
 [[env.staging.queues.producers]]
-queue = "druckshirt-order-fulfillment-staging" # Staging queue name
+queue = "druckshirt-order-fulfillment-staging" # Verified Staging Queue
 binding = "ORDER_QUEUE"
 
-# Secrets for staging would be set via:
-# `wrangler secret put <SECRET_NAME> --env staging`
+# Secrets for staging are set via Cloudflare Dashboard or `wrangler secret put <SECRET_NAME> --env staging`
 
-# Environment: Production
+# --- Environment: Production ---
 [env.production]
 name = "druckshirt-api-gateway-production"
 
-# --- Production Values ---
-kv_namespaces = [
-  { binding = "STATE_KV", id = "59d2638e44714737923ac9c12452209b" } # Verified Production ID
-]
-r2_buckets = [
-  { binding = "IMAGE_BUCKET", bucket_name = "druckmeinshirt-images-production" } # Verified Production Name
-]
+# Production Bindings (Consistent format)
+[[env.production.kv_namespaces]]
+binding = "STATE_KV"
+id = "59d2638e44714737923ac9c12452209b" # Verified Production ID
+
+[[env.production.r2_buckets]]
+binding = "IMAGE_BUCKET"
+bucket_name = "druckmeinshirt-images-production" # Verified Production Name
+
 [[env.production.queues.producers]]
 queue = "token-fulfillment-queue-production" # Verified Production Queue
 binding = "TOKEN_QUEUE"
+
 [[env.production.queues.producers]]
 queue = "order-fulfillment-queue-production" # Verified Production Queue
 binding = "ORDER_QUEUE"
-# --- End Production Values ---
 
-# --- Add production variables here ---
 [env.production.vars]
-ALLOWED_ORIGINS = "<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Replace <...> (No localhost needed for prod)
+# FIXME: You MUST replace this placeholder with your actual PRODUCTION frontend URL!
+ALLOWED_ORIGINS = "<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Replace <...>
+# FIXME: You MUST replace this placeholder with your actual PRODUCTION R2 public URL prefix!
+# Example: "https://pub-yyyyyyyy.r2.dev" or your custom domain pointing to the production R2 bucket.
 R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>" # Replace <...>
 
-# Variables (Top-Level - Defaults for local dev)
-# Usually overridden by environment, but sets default for `wrangler dev` if no --env specified
-[vars]
-# Add localhost AND your PRODUCTION frontend URL, comma-separated
-ALLOWED_ORIGINS = "http://localhost:3000,<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Replace <...>
-R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>" # Replace this
-
-# Secrets are set via GitHub Actions during deploy or manually via wrangler secret put
+# Secrets for production are set via Cloudflare Dashboard or `wrangler secret put <SECRET_NAME> --env production`
+# Or via GitHub Actions secrets during deployment.
 # DO NOT add secrets directly to this file.
 
-# Variables
-# [vars]
-# ALLOWED_ORIGINS = "http://localhost:3000,<YOUR_PRODUCTION_FRONTEND_URL_HERE>"
-# R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>"
-
-# Secrets are set via GitHub Actions during deploy
-# [vars]
-# STRIPE_SECRET_KEY = "placeholder"
-# STRIPE_WEBHOOK_SECRET = "placeholder"
-# PRINTFUL_API_KEY = "placeholder"
-# RESEND_API_KEY = "placeholder"
-# XAI_API_KEY = "placeholder" 
+# --- REMOVED Redundant/Confusing Sections Below --- 

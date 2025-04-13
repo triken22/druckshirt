@@ -672,149 +672,227 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   posthogOptOutToggle = document.getElementById("posthog-opt-out-toggle");
 
-  // Initialize Stripe
-  try {
-    if (
-      !CONFIG.STRIPE_PUBLISHABLE_KEY ||
-      CONFIG.STRIPE_PUBLISHABLE_KEY === "pk_test_placeholder"
-    ) {
-      throw new AppError(
-        ErrorTypes.CONFIGURATION,
-        "Stripe publishable key not configured"
-      );
+  // Initialize Stripe (add null check)
+  if (
+    CONFIG.STRIPE_PUBLISHABLE_KEY &&
+    CONFIG.STRIPE_PUBLISHABLE_KEY !== "pk_test_placeholder"
+  ) {
+    try {
+      stripe = await loadStripe(CONFIG.STRIPE_PUBLISHABLE_KEY);
+      if (!stripe) {
+        throw new AppError(
+          ErrorTypes.INITIALIZATION,
+          "Stripe failed to initialize after load"
+        );
+      }
+      console.log("Stripe initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize Stripe:", error);
+      // Only display message if the payment message element exists
+      const paymentMsgEl = document.getElementById("payment-message");
+      if (paymentMsgEl) {
+        displayMessage(
+          paymentMsgEl,
+          "Stripe konnte nicht initialisiert werden. Zahlung nicht möglich.",
+          "error"
+        );
+      }
+      if (Sentry) {
+        Sentry.captureException(error);
+      }
+      await captureErrorEvent(error, "stripe_initialization", {
+        stripe_key_configured: !!CONFIG.STRIPE_PUBLISHABLE_KEY,
+      });
     }
-    stripe = await loadStripe(CONFIG.STRIPE_PUBLISHABLE_KEY);
-    if (!stripe) {
-      throw new AppError(
-        ErrorTypes.INITIALIZATION,
-        "Stripe failed to initialize"
-      );
-    }
-    console.log("Stripe initialized successfully");
-  } catch (error) {
-    console.error("Failed to initialize Stripe:", error);
-    displayMessage(
-      paymentMessage,
-      "Stripe konnte nicht initialisiert werden. Bitte laden Sie die Seite neu.",
-      "error"
+  } else {
+    console.warn(
+      "Stripe publishable key not configured. Stripe features disabled."
     );
-    // Report to Sentry and PostHog
-    if (Sentry) {
-      Sentry.captureException(error);
-    }
-    await captureErrorEvent(error, "stripe_initialization", {
-      stripe_key_configured: !!CONFIG.STRIPE_PUBLISHABLE_KEY,
-    });
   }
 
-  // Initialize PostHog opt-out state
-  if (window.posthog && posthogOptOutToggle) {
-    // Check initial opt-out state and update UI
-    const hasOptedOut = await checkOptOutState();
-    posthogOptOutToggle.checked = hasOptedOut;
-
-    // Set up opt-out toggle listener
-    posthogOptOutToggle.addEventListener("change", handlePostHogOptOutToggle);
-  } else {
-    console.warn("PostHog not available. Analytics disabled.");
-    if (posthogOptOutToggle) {
+  // Initialize PostHog opt-out state (add null check for toggle)
+  if (posthogOptOutToggle) {
+    if (window.posthog) {
+      try {
+        const hasOptedOut = await checkOptOutState();
+        posthogOptOutToggle.checked = hasOptedOut;
+        posthogOptOutToggle.addEventListener(
+          "change",
+          handlePostHogOptOutToggle
+        );
+      } catch (err) {
+        console.error("Error initializing PostHog opt-out state:", err);
+      }
+    } else {
+      console.warn("PostHog not available. Analytics disabled.");
       posthogOptOutToggle.disabled = true;
     }
+  } else {
+    console.warn("PostHog opt-out toggle element not found.");
   }
 
-  // Add Event Listeners
+  // --- Add Event Listeners (with null checks) ---
+  // ADD NULL CHECKS to prevent 'Cannot read properties of null' errors
   if (imageUploadButton) {
     imageUploadButton.dataset.originalText = "Für Design Verwenden";
     imageUploadButton.textContent = "Für Design Verwenden";
-    imageUploadButton.addEventListener("click", handleUseUploadedImage);
+    // Ensure handleUseUploadedImage is defined before adding listener
+    if (typeof handleUseUploadedImage === "function") {
+      imageUploadButton.addEventListener("click", handleUseUploadedImage);
+    } else {
+      console.error("handleUseUploadedImage function is not defined!");
+    }
+  } else {
+    console.warn("Element #image-upload-button not found.");
   }
+
   if (buyTokensButton) {
     buyTokensButton.addEventListener("click", async (e) => {
       e.preventDefault();
       await initiateTokenPurchase();
     });
+  } else {
+    console.warn("Element #buy-tokens-button not found.");
   }
+
   if (submitPaymentButton) {
     submitPaymentButton.addEventListener("click", async (e) => {
       e.preventDefault();
       await handleTokenPaymentSubmit();
     });
+  } else {
+    console.warn("Element #submit-payment-button not found.");
   }
+
   if (aiGenerateButton) {
     aiGenerateButton.dataset.originalText = "Generieren";
     aiGenerateButton.textContent = "Generieren";
     aiGenerateButton.addEventListener("click", handleAiGenerate);
-  }
-  if (tabButtons) {
-    tabButtons.forEach((button) => {
-      button.addEventListener("click", () => switchTab(button.dataset.target));
-    });
-  }
-  if (aiResultsGrid) {
-    aiResultsGrid.addEventListener("click", handleAiImageSelection);
-  }
-  if (productListDiv) {
-    productListDiv.addEventListener("click", handleProductSelection);
-  }
-  if (colorSwatchesDiv) {
-    colorSwatchesDiv.addEventListener("click", handleColorSelection);
+  } else {
+    console.warn("Element #ai-generate-button not found.");
   }
 
-  // Add Phase 3 Listeners
+  if (tabButtons && tabButtons.length > 0) {
+    tabButtons.forEach((button) => {
+      // Ensure switchTab is defined
+      if (typeof switchTab === "function") {
+        button.addEventListener("click", () =>
+          switchTab(button.dataset.target)
+        );
+      } else {
+        console.error("switchTab function is not defined!");
+      }
+    });
+  } else {
+    console.warn("Elements matching .tab-button not found.");
+  }
+
+  if (aiResultsGrid) {
+    aiResultsGrid.addEventListener("click", handleAiImageSelection);
+  } else {
+    console.warn("Element #ai-results-grid not found.");
+  }
+
+  if (productListDiv) {
+    productListDiv.addEventListener("click", handleProductSelection);
+  } else {
+    console.warn("Element #product-list not found.");
+  }
+
+  if (colorSwatchesDiv) {
+    colorSwatchesDiv.addEventListener("click", handleColorSelection);
+  } else {
+    console.warn("Element #color-swatches not found.");
+  }
+
+  // Add Phase 3 Listeners (with null checks)
   if (sizeSelectorDiv) {
     sizeSelectorDiv.addEventListener("click", handleSizeSelection);
+  } else {
+    console.warn("Element #size-selector not found.");
   }
+
   if (quantityInput) {
     quantityInput.addEventListener("change", checkDesignCompletion);
+  } else {
+    console.warn("Element #quantity-input not found.");
   }
+
   if (proceedToCheckoutButton) {
     proceedToCheckoutButton.addEventListener("click", showCheckoutSection);
+  } else {
+    console.warn("Element #proceed-to-checkout-button not found.");
   }
+
   if (getShippingButton) {
     getShippingButton.addEventListener("click", handleGetShippingOptions);
+  } else {
+    console.warn("Element #get-shipping-button not found.");
   }
+
   if (shippingOptionsListDiv) {
     shippingOptionsListDiv.addEventListener(
       "click",
       handleShippingOptionSelection
     );
+  } else {
+    console.warn("Element #shipping-options-list not found.");
   }
+
   if (submitTshirtOrderButton) {
     submitTshirtOrderButton.addEventListener("click", handleSubmitTshirtOrder);
+  } else {
+    console.warn("Element #submit-tshirt-order-button not found.");
   }
+
   if (recoveryRequestButton) {
     recoveryRequestButton.addEventListener("click", handleRecoveryRequest);
+  } else {
+    console.warn("Element #recovery-request-button not found.");
   }
-  if (navButtons) {
+
+  if (navButtons && navButtons.length > 0) {
     navButtons.forEach((button) => {
-      button.addEventListener("click", () =>
-        showSection(button.dataset.target)
-      );
+      // Ensure showSection is defined
+      if (typeof showSection === "function") {
+        button.addEventListener("click", () =>
+          showSection(button.dataset.target)
+        );
+      } else {
+        console.error("showSection function is not defined!");
+      }
     });
+  } else {
+    console.warn("Elements matching .nav-button not found.");
   }
-  // Mockup Interaction Listeners
+
+  // Mockup Interaction Listeners (with null checks)
   if (designImageContainer) {
     designImageContainer.addEventListener("mousedown", handleMouseDown);
     const resizeHandle = designImageContainer.querySelector(".resize-handle");
     if (resizeHandle) {
       resizeHandle.addEventListener("mousedown", handleMouseDown);
-    }
+    } // No warning if handle is missing, might be intentional
+  } else {
+    console.warn("Element #design-image-container not found.");
   }
+
   if (imageScaleSlider) {
     imageScaleSlider.addEventListener("input", handleScaleSlider);
+  } else {
+    console.warn("Element #image-scale-slider not found.");
   }
+
+  // Assuming document always exists for these two
   document.addEventListener("mousemove", handleMouseMove);
   document.addEventListener("mouseup", handleMouseUp);
 
-  // Initial Token Balance Check
-  fetchAndDisplayTokenBalance();
-  fetchAndDisplayProducts();
-
-  // Show initial section (design)
-  showSection("design-section");
-
-  // Restore design state if available
-  restoreDesignState();
+  // Initial Calls (add null checks if functions depend on elements existing)
+  if (typeof fetchAndDisplayTokenBalance === "function")
+    fetchAndDisplayTokenBalance();
+  if (typeof fetchAndDisplayProducts === "function") fetchAndDisplayProducts();
+  if (typeof showSection === "function") showSection("design-section");
+  if (typeof restoreDesignState === "function") restoreDesignState();
 });
 
 // --- Helper Functions ---
@@ -2383,3 +2461,146 @@ function displaySelectedImage(imageUrl) {
 document.addEventListener("DOMContentLoaded", () => {
   initializeDesignControls();
 });
+
+// --- Ensure handleUseUploadedImage is defined ---
+// Moved the function definition here to ensure it's declared before use
+// (and ensure it's not nested inside another function like DOMContentLoaded)
+/**
+ * Handles the user's request to use an uploaded image
+ * @async
+ */
+async function handleUseUploadedImage() {
+  const fileInput = document.getElementById("image-upload-input");
+  const uploadButton = document.getElementById("image-upload-button");
+  const statusDisplay = document.getElementById("upload-status");
+  const previewDisplay = document.getElementById("image-preview-upload");
+
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    displayMessage(
+      statusDisplay,
+      "Bitte wähle zuerst eine Datei aus.",
+      "error"
+    );
+    return;
+  }
+  const file = fileInput.files[0];
+
+  // Basic client-side validation
+  const allowedTypes = ["image/png", "image/jpeg"];
+  if (!allowedTypes.includes(file.type)) {
+    displayMessage(
+      statusDisplay,
+      "Ungültiger Dateityp. Bitte PNG oder JPG hochladen.",
+      "error"
+    );
+    return;
+  }
+  // Optional: Add size validation
+  // const maxSizeMB = 5;
+  // if (file.size > maxSizeMB * 1024 * 1024) {
+  //     displayMessage(statusDisplay, `Datei zu groß (Max: ${maxSizeMB}MB).`, 'error');
+  //     return;
+  // }
+
+  setLoadingState(uploadButton, true);
+  displayMessage(statusDisplay, "Lade Bild hoch...", "info");
+
+  await captureAnalyticsEvent("image_upload_started", {
+    file_size: file.size,
+    file_type: file.type,
+  });
+
+  try {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const data = await makeApiCall(
+      `${CONFIG.API_BASE_URL}/upload-image`,
+      {
+        method: "POST",
+        body: formData,
+      },
+      (response) => response.url && typeof response.url === "string" // Validate response
+    );
+
+    const imageUrl = data.url;
+    if (imageUrl) {
+      selectedImageUrl = imageUrl; // Store the selected URL
+      updateMockupImage(imageUrl); // Update the main mockup
+      displayMessage(statusDisplay, "Bild erfolgreich hochgeladen.", "success");
+      if (previewDisplay) {
+        previewDisplay.innerHTML = `<img src="${imageUrl}" alt="Hochgeladenes Bild">`;
+      }
+      await captureAnalyticsEvent("image_upload_completed", {
+        success: true,
+        image_url: imageUrl,
+      });
+    } else {
+      throw new AppError("No image URL returned from server", ErrorTypes.API);
+    }
+  } catch (error) {
+    console.error("Image upload failed:", error);
+    displayErrorMessage(statusDisplay, error); // Use centralized error display
+    if (previewDisplay) previewDisplay.innerHTML = "";
+    await captureErrorEvent(error, "image_upload", {
+      file_type: file.type,
+      file_size: file.size,
+    });
+  } finally {
+    setLoadingState(uploadButton, false);
+    // Don't clear file input automatically, user might want to re-try upload
+    // if (fileInput) fileInput.value = "";
+  }
+}
+
+// --- Other function definitions ---
+// (Ensure switchTab and showSection are also defined correctly in the global scope or imported)
+
+function switchTab(targetId) {
+  // Find all tab buttons and content
+  const buttons = document.querySelectorAll(".tab-button");
+  const contents = document.querySelectorAll(".tab-content");
+
+  // Remove active class from all buttons and content
+  buttons.forEach((button) => button.classList.remove("active"));
+  contents.forEach((content) => content.classList.remove("active"));
+
+  // Add active class to the clicked button and corresponding content
+  const targetButton = document.querySelector(
+    `.tab-button[data-target="${targetId}"]`
+  );
+  const targetContent = document.getElementById(targetId);
+
+  if (targetButton) {
+    targetButton.classList.add("active");
+  }
+  if (targetContent) {
+    targetContent.classList.add("active");
+  } else {
+    console.error(`Tab content with ID '${targetId}' not found.`);
+  }
+
+  // Capture tab switch event
+  captureAnalyticsEvent("tab_switched", { tab_id: targetId });
+}
+
+// Ensure showSection is defined at the correct scope
+function showSection(sectionId) {
+  const sections = document.querySelectorAll(".section");
+  sections.forEach((section) => {
+    section.style.display = section.id === sectionId ? "block" : "none";
+  });
+
+  // Update active state for nav buttons
+  const navButtons = document.querySelectorAll(".nav-button");
+  navButtons.forEach((button) => {
+    if (button.dataset.target === sectionId) {
+      button.classList.add("active");
+    } else {
+      button.classList.remove("active");
+    }
+  });
+
+  // Track page view
+  trackPageView(sectionId);
+}
