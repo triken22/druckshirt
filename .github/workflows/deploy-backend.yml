@@ -105,7 +105,7 @@ jobs:
       - name: Finalize Sentry Release
         if: (steps.deploy_api_gateway.outcome == 'success' || steps.deploy_queue_consumer.outcome == 'success') && env.CLOUDFLARE_ENV != 'local' && env.SENTRY_AUTH_TOKEN != ''
         run: |
-          # No need to install again, npx will find it or download temporarily
+          npm install --no-save @sentry/cli@latest
           export SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           export SENTRY_RELEASE=$(npx sentry-cli releases propose-version)
           echo "Finalizing Sentry release: $SENTRY_RELEASE"
