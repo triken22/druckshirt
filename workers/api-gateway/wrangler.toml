@@ -24,6 +24,7 @@ binding = "ORDER_QUEUE"
 # Environment: Staging
 [env.staging]
 name = "druckshirt-api-gateway-staging"
+node_compat = true # Explicitly enable for staging
 
 # Define vars explicitly for staging
 [env.staging.vars]
@@ -54,6 +55,7 @@ binding = "ORDER_QUEUE"
 # Environment: Production
 [env.production]
 name = "druckshirt-api-gateway-production"
+node_compat = true # Explicitly enable for production
 
 # --- Production Values ---
 kv_namespaces = [
