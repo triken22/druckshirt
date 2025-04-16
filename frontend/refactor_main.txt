@@ -1,0 +1,90 @@
+# Refactoring Plan: frontend/src/main.js
+
+**Goals:**
+
+1.  **Improve Maintainability:** Break into smaller, focused modules.
+2.  **Enhance Code Quality:** Reduce complexity, improve organization, increase testability.
+3.  **Reduce Bug Proneness:** Minimize side effects via encapsulated state/logic.
+4.  **Potential Performance Gains:** Facilitate future optimizations.
+
+**Proposed Modular Structure (`frontend/src/`):**
+
+1.  `config.js`: Application configuration (constants, keys).
+2.  `state.js`: Manages application state (selections, design, tokens), including save/restore.
+3.  `api.js`: Handles backend API communication (`makeApiCall`, specific endpoint functions).
+4.  `ui.js`: Handles direct DOM manipulation (rendering, updates, messages, loading states).
+5.  `design.js`: Handles design canvas logic (drag, resize, scale, placement).
+6.  `analytics.js`: Encapsulates PostHog initialization and event tracking.
+7.  `utils.js`: Holds generic utility functions.
+8.  `main.js` (Refactored): Entry point, orchestrates modules, sets up primary event listeners.
+
+**Refactoring Plan & To-Dos:**
+
+**Phase 0: Preparation**
+
+*   [x] Ensure Git is up-to-date; create a new branch.
+*   [x] Verify build tools (Vite), linters, formatters are working.
+*   [x] Create empty module files (`config.js`, `state.js`, etc.) in `frontend/src/`.
+
+**Phase 1: Extract Configuration & Utilities**
+
+*   [x] Move `CONFIG`, `ErrorTypes`, `AppError`, `RETRY_CONFIG` to `config.js`; export them.
+*   [x] Move generic helpers (`displayMessage`, `setLoadingState`, `hashEmail`, `getRetryDelay`) to `utils.js`; export them.
+*   [x] Update `main.js` to `import` from `config.js` and `utils.js`; remove original definitions.
+*   [ ] Test basic functionality (build, load, UI feedback).
+
+**Phase 2: Encapsulate State (`state.js`)**
+
+*   [x] Define a central `appState` object in `state.js`.
+*   [x] Move global state variables into `appState`.
+*   [x] Create and export getter functions (e.g., `getSelectedProduct()`) from `state.js`.
+*   [x] Create and export setter functions (e.g., `setSelectedProduct(product)`) from `state.js`.
+*   [x] Move `saveDesignState`, `restoreDesignState` logic into `state.js`.
+*   [x] Move `getTokenGrantId`, `saveTokenGrantId` into `state.js`.
+*   [x] **(Major Task)** Refactor *all* code in `main.js` accessing global state to use `state.js` getters/setters.
+*   [ ] Test state-dependent functionality thoroughly. (User needs to test)
+
+**Phase 3: Extract API Logic (`api.js`)**
+
+*   [x] Move `makeApiCall` function into `api.js`.
+*   [x] Create and export specific API functions (e.g., `fetchProducts()`, `uploadImage(formData)`) using `makeApiCall`.
+*   [x] Refactor all code using `fetch`/`makeApiCall` to use the specific functions from `api.js`.
+*   [x] Test all features involving backend communication.
+
+**Phase 4: Extract UI Logic (`ui.js`)**
+
+*   [x] Move DOM manipulation function stubs (`displayProducts`, `updateTokenBalanceDisplay`, `showSection`, `displayMessage`) to `ui.js` and export them.
+*   [x] Refactor `main.js` to import and use these UI functions.
+*   [x] Implement product list loading/clearing helpers in `ui.js` and use them in `main.js`.
+*   [x] Implement actual product rendering logic in `displayProducts` and wire up the product fetching flow in `main.js`.
+*   [>] Move and implement additional UI logic (event handlers, rendering, etc.) into `ui.js` and refactor `main.js` to use them.
+*   [>] Ensure UI utilities (`displayMessage`, etc.) are imported from `utils.js` within `ui.js`.
+*   [>] Test all UI interactions and visual updates.
+
+**Phase 5: Extract Design Logic (`design.js`)**
+
+*   [ ] Move design interaction logic (`initializeDesignControls`, drag/resize handlers, etc.) to `design.js`.
+*   [ ] Move placement calculation (`getPlacementData`, `validateDesignPlacement`) and related constants to `design.js`.
+*   [ ] Refactor `main.js` event listeners for design interaction to call functions from `design.js`.
+*   [ ] Ensure `design.js` interacts with `state.js` and `ui.js` as needed.
+*   [ ] Test design canvas interactions and checkout placement.
+
+**Phase 6: Extract Analytics Logic (`analytics.js`)**
+
+*   [ ] Move PostHog initialization to `analytics.js`.
+*   [ ] Move analytics helpers (`captureAnalyticsEvent`, `trackPageView`, etc.) to `analytics.js`.
+*   [ ] Refactor code calling analytics functions to use `analytics.js` imports.
+*   [ ] Test analytics event capturing and opt-out.
+
+**Phase 7: Clean up `main.js`**
+
+*   [ ] Remove all logic moved to other modules.
+*   [ ] Ensure `main.js` primarily imports modules, initializes, sets up concise event listeners delegating actions.
+*   [ ] Review `main.js` for remaining misplaced logic or globals.
+
+**Phase 8: Final Testing & Refinement**
+
+*   [ ] Perform thorough end-to-end testing of all user flows.
+*   [ ] Review final module structure for clarity and correctness.
+*   [ ] Run linters and formatters.
+*   [ ] Build and test the production build.

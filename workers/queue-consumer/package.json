@@ -5,6 +5,7 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "start": "wrangler dev --local",
+    "typecheck": "tsc --noEmit",
     "test": "vitest"
   },
   "devDependencies": {

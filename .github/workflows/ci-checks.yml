@@ -30,20 +30,38 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # If using private packages
 
-      - name: Placeholder - Run Checks
-        run: |
-          echo "TODO: Add lint, format, typecheck, unit test steps here"
+      - name: Build Frontend
+        run: npm run build --prefix frontend
+
+      - name: Run API Gateway Tests
+        run: npm test --prefix workers/api-gateway
+
+      - name: Run Queue Consumer Tests
+        run: npm test --prefix workers/queue-consumer
+
+      - name: Typecheck API Gateway
+        run: npm run typecheck --prefix workers/api-gateway
+
+      - name: Typecheck Queue Consumer
+        run: npm run typecheck --prefix workers/queue-consumer
 
   security:
     runs-on: ubuntu-latest
     name: Security Checks
+    # Add permissions for CodeQL to write security events
+    permissions:
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript # Covers JS and TS
+
       - name: Run CodeQL
         uses: github/codeql-action/analyze@v3
-        # with:
-        #   languages: "javascript" # Adjust if using TypeScript primarily
+        # No 'with' needed here usually if specified in init
 
   documentation:
     runs-on: ubuntu-latest

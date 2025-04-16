@@ -65,10 +65,21 @@ export interface Env {
   PRINTFUL_API_KEY: string;
 
   /**
-   * Resend API key. Required for sending transactional emails (token grant, recovery, order confirmation).
+   * Printful Store ID. Required for API calls needing store context.
+   * @secret PRINTFUL_STORE_ID
+   */
+  PRINTFUL_STORE_ID?: string; // Optional for now, handler should check
+
+  /**
+   * Resend API key. Required for sending transactional emails via Resend templates.
    * @secret RESEND_API_KEY
    */
   RESEND_API_KEY: string;
+  /**
+   * Template ID for Grant ID recovery emails in Resend.
+   * @secret RESEND_TEMPLATE_GRANT_RECOVERY
+   */
+  RESEND_TEMPLATE_GRANT_RECOVERY: string;
 
   /**
    * x.ai API key. Required for calling the AI image generation endpoint.
@@ -587,42 +598,40 @@ interface FormattedProduct {
 
 // GET /api/printful/products
 app.get("/api/printful/products", async (c) => {
-  if (!c.env.PRINTFUL_API_KEY || !c.env.STATE_KV) {
-    console.error("PRINTFUL_API_KEY or STATE_KV binding missing.");
-    return c.json({ error: "Server configuration error" }, 500);
-  }
-
-  let cacheHit = false;
   try {
+    if (
+      !c.env.PRINTFUL_API_KEY ||
+      !c.env.STATE_KV ||
+      !c.env.PRINTFUL_STORE_ID
+    ) {
+      console.error(
+        "PRINTFUL_API_KEY, STATE_KV, or PRINTFUL_STORE_ID binding/secret missing."
+      );
+      return c.json({ error: "Server configuration error" }, 500);
+    }
+
+    let cacheHit = false;
+
     // --- Query Parameter Handling ---
     const limitQuery = c.req.query("limit");
     const offsetQuery = c.req.query("offset");
-    const categoryIdQuery = c.req.query("category_id"); // Example: Allow category filtering
-
-    // Validate and parse parameters (add more robust validation as needed)
-    const limit = limitQuery ? parseInt(limitQuery, 10) : 20; // Default limit
+    const categoryIdQuery = c.req.query("category_id");
+    const limit = limitQuery ? parseInt(limitQuery, 10) : 20;
     const offset = offsetQuery ? parseInt(offsetQuery, 10) : 0;
     const categoryId = categoryIdQuery ? categoryIdQuery : null;
 
-    if (isNaN(limit) || limit <= 0 || limit > 100) {
-      // Printful max limit is 100
-      return c.json(
-        { error: "Invalid limit parameter. Must be between 1 and 100." },
-        400
-      );
-    }
-    if (isNaN(offset) || offset < 0) {
-      return c.json(
-        { error: "Invalid offset parameter. Must be 0 or greater." },
-        400
-      );
+    if (
+      isNaN(limit) ||
+      limit <= 0 ||
+      limit > 100 ||
+      isNaN(offset) ||
+      offset < 0
+    ) {
+      return c.json({ error: "Invalid pagination parameters." }, 400);
     }
 
     // --- KV Caching Logic ---
-    // Construct cache key based on parameters that affect the result
     const cacheKey = `printful:products:l=${limit}:o=${offset}${categoryId ? `:c=${categoryId}` : ""}`;
-
-    // Try fetching from cache first
     const cachedData = await c.env.STATE_KV.get<FormattedProduct[]>(cacheKey, {
       type: "json",
     });
@@ -643,15 +652,16 @@ app.get("/api/printful/products", async (c) => {
     queryParams.set("limit", limit.toString());
     queryParams.set("offset", offset.toString());
     if (categoryId) {
-      queryParams.set("category_id", categoryId); // Pass category ID if provided
+      queryParams.set("category_id", categoryId);
     }
-    // TODO: Potentially filter specific product IDs if needed via queryParams.set('product_ids', '...')
 
     const response = await printfulRequestGateway(
       c.env.PRINTFUL_API_KEY,
       "GET",
-      "/catalog/products",
-      queryParams
+      "/catalog-products",
+      queryParams,
+      undefined,
+      c.env.PRINTFUL_STORE_ID
     );
 
     if (!response.ok) {
@@ -682,7 +692,7 @@ app.get("/api/printful/products", async (c) => {
       (product: PrintfulProduct) => {
         const availableSizes = [
           ...new Set(product.variants.map((v) => v.size)),
-        ].sort(); // Unique sorted sizes
+        ].sort();
         const availableColors = product.variants
           .reduce(
             (acc, v) => {
@@ -693,7 +703,7 @@ app.get("/api/printful/products", async (c) => {
             },
             [] as { name: string; code: string }[]
           )
-          .sort((a, b) => a.name.localeCompare(b.name)); // Unique sorted colors
+          .sort((a, b) => a.name.localeCompare(b.name));
 
         const variants: FormattedVariant[] = product.variants.map((v) => ({
           id: v.id,
@@ -701,10 +711,9 @@ app.get("/api/printful/products", async (c) => {
           color: v.color,
           color_code: v.color_code,
           in_stock: v.in_stock,
-          image_url: v.image, // Pass variant image URL
+          image_url: v.image,
         }));
 
-        // Format placements data
         const placements: FormattedPlacement[] = (product.placements || []).map(
           (p) => ({
             placement: p.placement,
@@ -723,13 +732,12 @@ app.get("/api/printful/products", async (c) => {
           available_sizes: availableSizes,
           available_colors: availableColors,
           variants: variants,
-          placements: placements, // Include formatted placements
+          placements: placements,
         };
       }
     );
 
     // --- Store in Cache ---
-    // Use waitUntil to avoid blocking the response
     c.executionCtx.waitUntil(
       c.env.STATE_KV.put(cacheKey, JSON.stringify(formattedProducts), {
         expirationTtl: PRINTFUL_PRODUCTS_CACHE_TTL,
@@ -747,15 +755,24 @@ app.get("/api/printful/products", async (c) => {
 
     return c.json({ products: formattedProducts });
   } catch (error: any) {
-    console.error("Error fetching Printful products:", error);
-    return c.json({ error: "Internal server error" }, 500);
+    console.error("Error in /api/printful/products route:", error);
+    // Ensure a JSON error response is sent
+    return c.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Internal server error fetching products",
+      },
+      500
+    );
   }
 });
 
 // POST /api/printful/shipping-options
 app.post("/api/printful/shipping-options", async (c) => {
-  if (!c.env.PRINTFUL_API_KEY) {
-    console.error("PRINTFUL_API_KEY not set.");
+  if (!c.env.PRINTFUL_API_KEY || !c.env.PRINTFUL_STORE_ID) {
+    console.error("PRINTFUL_API_KEY or PRINTFUL_STORE_ID not set.");
     return c.json({ error: "Server configuration error" }, 500);
   }
 
@@ -779,7 +796,8 @@ app.post("/api/printful/shipping-options", async (c) => {
       "POST",
       endpoint,
       undefined,
-      validation.data
+      validation.data,
+      c.env.PRINTFUL_STORE_ID
     );
 
     if (!response.ok) {
@@ -1080,53 +1098,59 @@ app.post(
   }
 );
 
-// GET /api/get-token-balance
-app.get("/api/get-token-balance", async (c) => {
-  if (!c.env.STATE_KV) {
-    console.error("STATE_KV binding missing.");
-    return c.json({ error: "Server configuration error" }, 500);
-  }
-
-  try {
-    const grantIdQuery = c.req.query("grant_id");
-
-    // Validate the grant_id from query parameter
-    const validation = GrantIdParamSchema.safeParse({ grant_id: grantIdQuery });
-
-    if (!validation.success) {
-      // Use 400 for bad request (missing or malformed grant_id)
-      return c.json(
-        {
-          error: "Invalid or missing grant_id query parameter",
-          details: validation.error.errors,
-        },
-        400
-      );
+// GET /api/token-balance/:grant_id
+app.get(
+  "/api/token-balance/:grant_id", // Restored original path
+  async (c: Context<{ Bindings: Env; Variables: Variables }>) => {
+    // Check necessary binding
+    if (!c.env.STATE_KV) {
+      console.error("STATE_KV binding missing.");
+      return c.json({ error: "Server configuration error" }, 500);
     }
 
-    const grant_id = validation.data.grant_id;
+    try {
+      // Original param validation
+      const params = GrantIdParamSchema.safeParse(c.req.param());
+      if (!params.success) {
+        return c.json(
+          {
+            error: "Invalid grant ID format in URL",
+            details: params.error.errors,
+          },
+          400
+        );
+      }
+      const grant_id = params.data.grant_id;
+      // Removed console log for test
 
-    // Fetch token data from KV
-    const tokenData = await c.env.STATE_KV.get<TokenData>(grant_id, {
-      type: "json",
-    });
+      // Fetch token data from KV
+      const tokenData = await c.env.STATE_KV.get<TokenData>(grant_id, {
+        type: "json",
+      });
 
-    // Return remaining tokens, or 0 if grant_id not found
-    const tokensRemaining = tokenData?.tokens_remaining ?? 0;
+      // Return remaining tokens, or 0 if grant_id not found
+      const tokensRemaining = tokenData?.tokens_remaining ?? 0; // Reverted -1 to 0 for not found
+      // Removed console log for test
 
-    // --- Send PostHog Event ---
-    sendPostHogEvent(c.env, c.executionCtx, grant_id, "token_balance_checked");
-    // --- End PostHog Event ---
+      // --- Send PostHog Event ---
+      sendPostHogEvent(
+        c.env,
+        c.executionCtx,
+        grant_id,
+        "token_balance_checked"
+      ); // Restored original event name
+      // --- End PostHog Event ---
 
-    return c.json({ tokens_remaining: tokensRemaining });
-  } catch (error: any) {
-    console.error("Error fetching token balance:", error);
-    return c.json(
-      { error: "Internal server error retrieving token balance" },
-      500
-    );
+      return c.json({ tokens_remaining: tokensRemaining });
+    } catch (error: any) {
+      console.error("Error fetching token balance:", error);
+      return c.json(
+        { error: "Internal server error retrieving token balance" }, // Restored original message
+        500
+      );
+    }
   }
-});
+);
 
 // POST /api/recover-grant-id
 app.post(
@@ -1193,19 +1217,17 @@ app.post(
 
         // Send email
         const resend = new Resend(c.env.RESEND_API_KEY);
-        await resend.emails.send({
-          from: "DruckMeinShirt Recovery <noreply@yourdomain.com>", // REPLACE
-          to: [email],
-          subject: "Your DruckMeinShirt Grant ID Recovery",
-          html: `<p>You requested recovery for your DruckMeinShirt Grant IDs.</p>
-                         <p>We found the following Grant ID(s) associated with recent successful token purchases for this email address:</p>
-                         <ul>
-                            ${uniqueGrantIds
-                              .map((id) => `<li><code>${id}</code></li>`)
-                              .join("\n")}
-                         </ul>
-                         <p>Please keep these IDs safe.</p>`, // TODO: Improve email template
-        });
+        if (!c.env.RESEND_TEMPLATE_GRANT_RECOVERY) {
+          console.error("RESEND_TEMPLATE_GRANT_RECOVERY not configured.");
+        } else {
+          // Send email using template ID via raw POST to satisfy type definitions
+          await resend.post("/emails", {
+            from: "DruckMeinShirt Recovery <noreply@yourdomain.com>",
+            to: [email],
+            template_id: c.env.RESEND_TEMPLATE_GRANT_RECOVERY,
+            template_data: { grant_ids: uniqueGrantIds },
+          });
+        }
 
         console.log(`Sent recovery email to ${email}`);
         return c.json({
@@ -1255,21 +1277,28 @@ async function printfulRequestGateway(
   method: string,
   endpoint: string,
   queryParams?: URLSearchParams,
-  body?: any
+  body?: any,
+  storeId?: string
 ): Promise<Response> {
   let url = `${PRINTFUL_API_BASE_GW}${endpoint}`;
   if (queryParams) {
     url += `?${queryParams.toString()}`;
   }
 
-  const headers = {
+  const headers: HeadersInit = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
     Accept: "application/json",
   };
 
+  // Add Store ID header if provided
+  if (storeId) {
+    headers["X-PF-Store-Id"] = storeId;
+  }
+
   console.log(
     `Printful API Request (GW): ${method} ${url}` +
+      (storeId ? ` Store: ${storeId}` : "") +
       (body ? ` Body: ${JSON.stringify(body).substring(0, 100)}...` : "")
   );
 

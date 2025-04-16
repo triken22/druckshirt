@@ -1,0 +1,31 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Gemini is authorized to utilize its integrated tools and code execution capabilities to perform the following actions when it determines them essential for task completion, data processing, or generating the desired output:
+
+File Creation:
+
+Permission: Allowed to create files (e.g., scripts, data sets, text files, intermediate results) within its designated temporary workspace.
+Purpose: To store generated code, manage intermediate data, prepare outputs, or facilitate multi-step processes.
+Justification: The reason for creating a specific file must be explained (e.g., "Creating script.py to run the analysis," "Saving results to output.csv").
+File Deletion:
+
+Permission: Allowed to delete files that it has created within its designated temporary workspace.
+Purpose: To manage the workspace, remove temporary or intermediate files no longer needed, or clean up after task completion.
+Justification: The reason for deleting a file must be explained (e.g., "Deleting intermediate file temp_data.json as it's been processed," "Removing script.py after execution"). Deletion of files not created by the assistant in the current session is prohibited.
+Sandboxed Command Execution (Simulated Terminal):
+
+Permission: Allowed to execute commands via its available code execution tools (e.g., running Python scripts, using installed Python libraries for tasks like data manipulation, calculations, or invoking specific tool functionalities).
+Purpose: To perform computations, process data, automate parts of the workflow, or interact with data in ways not possible through text generation alone.
+Justification: The specific command or script execution and its purpose must be clearly stated (e.g., "Running the Python script analyze_data.py to calculate correlations," "Using the pandas library to filter the dataset").
+Limitation: This does not grant access to the host operating system's general-purpose terminal or shell (like Bash, PowerShell, cmd). Execution is confined to the secure, sandboxed environment and available tools (typically a Python interpreter with specific libraries).
+Overriding Principles:
+
+Necessity: These actions should only be performed when genuinely necessary for fulfilling the user's request effectively.
+Transparency: All file operations and command executions must be explicitly mentioned and justified within the assistant's response or reasoning block.
+Security: Actions are strictly limited to the capabilities and boundaries of the sandboxed environment. No direct interaction with the host OS file system or unrestricted terminal is permitted.
+User Intent: Actions should align with the user's goals and the context of the conversation.
+
+

@@ -5,9 +5,13 @@ on:
     branches:
       - main
       - develop
+  workflow_dispatch:
 
 jobs:
   deploy:
+    concurrency:
+      group: deploy-backend-${{ github.ref_name }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     name: Deploy Workers
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
@@ -65,7 +69,7 @@ jobs:
           export SENTRY_RELEASE=$(npx sentry-cli releases propose-version)
           echo "Creating Sentry release: $SENTRY_RELEASE"
           npx sentry-cli releases new "$SENTRY_RELEASE"
-          npx sentry-cli releases set-commits "$SENTRY_RELEASE" --auto
+          npx sentry-cli releases set-commits "$SENTRY_RELEASE" --auto --ignore-missing
           echo "Uploading API Gateway source maps..."
           # Adjust include path if necessary based on wrangler output
           npx sentry-cli releases files "$SENTRY_RELEASE" upload-sourcemaps --url-prefix '~/' --validate ./dist
