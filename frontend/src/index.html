@@ -4,30 +4,55 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DruckMeinShirt - Custom T-Shirt Design</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Montserrat:wght@700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div id="app">
-      <header>
-        <h1>DruckMeinShirt</h1>
-        <p>Create your custom t-shirt design</p>
+      <header id="site-header">
+        <div class="header-content container">
+          <div class="logo">
+            <img src="assets/logo.svg" alt="DruckMeinShirt Logo" class="logo-image" />
+            <h1 class="logo-text">DruckMeinShirt</h1>
+          </div>
+          <nav class="primary-nav">
+            <button class="nav-button active" data-target="design-section">Design</button>
+            <button class="nav-button" data-target="shop-section">Shop</button>
+            <button class="nav-button" data-target="ai-generator-section">AI Generator</button>
+            <button class="nav-button" data-target="checkout-section">Checkout</button>
+            <button class="nav-button" data-target="recovery-section">Recovery</button>
+          </nav>
+          <button class="nav-toggle" aria-label="Toggle navigation menu">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+        </div>
       </header>
 
-      <main>
-        <div class="mockup-area">
-          <div id="design-image-container">
-            <img id="design-image" alt="Your design" />
+      <main class="container design-layout">
+        <div class="design-controls">
+          <div class="design-step">
+            <h3>Step 1: Upload Your Design</h3>
+            <div class="form-group">
+              <label for="image-upload">Choose an image file</label>
+              <input type="file" id="image-upload" accept="image/*" />
+            </div>
+            <button id="upload-button" class="button-primary">Upload Design</button>
           </div>
-          <div id="printable-area-overlay"></div>
+          <div class="design-step">
+            <h3>Step 2: View Printable Area</h3>
+            <button id="toggle-printable-area" class="button">Show Printable Area</button>
+          </div>
         </div>
-
-        <div class="mockup-controls">
-          <input type="file" id="image-upload" accept="image/*" />
-          <button id="upload-button">Upload Design</button>
-          <button id="toggle-printable-area">Show Printable Area</button>
+        <div class="design-preview">
+          <div id="design-image-container"></div>
+          <div id="printable-area-overlay" class="print-area-guide"></div>
+          <div id="message-container"></div>
         </div>
-
-        <div id="message-container"></div>
       </main>
 
       <footer>

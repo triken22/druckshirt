@@ -8,20 +8,22 @@ export function displayProducts(products, productListDiv) {
       '<div class="no-products">Keine Produkte gefunden.</div>';
     return;
   }
+  // Ensure container uses product-list grid
+  productListDiv.classList.add('product-list');
   productListDiv.innerHTML = products
     .map(
       (product) => `
         <div class="product-item" data-product-id="${product.id}">
-          ${
-            product.image_url
+          <div class="product-image-wrapper">
+            ${product.image_url
               ? `<img src="${product.image_url}" alt="${product.name}" class="product-image" />`
-              : ""
-          }
-          <div class="product-name">${product.name}</div>
+              : ''}
+            <div class="product-name-overlay"><span>${product.name}</span></div>
+          </div>
         </div>
       `
     )
-    .join("");
+    .join('');
 }
 
 // Update the token balance display

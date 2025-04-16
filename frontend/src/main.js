@@ -78,6 +78,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   initAnalytics();
   trackPageView();
   trackPageView();
+  // Sticky header shadow on scroll
+  const headerEl = document.getElementById("site-header");
+  window.addEventListener("scroll", () => {
+    if (headerEl) headerEl.classList.toggle("scrolled", window.scrollY > 0);
+  });
+  // Mobile nav toggle for small screens
+  const navToggle = document.querySelector(".nav-toggle");
+  const primaryNav = document.querySelector(".primary-nav");
+  if (navToggle && primaryNav) {
+    navToggle.addEventListener("click", () => {
+      primaryNav.classList.toggle("open");
+      navToggle.classList.toggle("active");
+    });
+  }
   // Recovery Flow: Grant ID recovery
   if (recoveryRequestButton && recoveryEmailInput && recoveryMessageDiv) {
     recoveryRequestButton.addEventListener('click', async () => {

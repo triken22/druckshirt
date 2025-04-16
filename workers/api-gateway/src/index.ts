@@ -1220,7 +1220,8 @@ app.post(
         if (!c.env.RESEND_TEMPLATE_GRANT_RECOVERY) {
           console.error("RESEND_TEMPLATE_GRANT_RECOVERY not configured.");
         } else {
-          await resend.emails.send({
+          // Send email using template ID via raw POST to satisfy type definitions
+          await resend.post("/emails", {
             from: "DruckMeinShirt Recovery <noreply@yourdomain.com>",
             to: [email],
             template_id: c.env.RESEND_TEMPLATE_GRANT_RECOVERY,
