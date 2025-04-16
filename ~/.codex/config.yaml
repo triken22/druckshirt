@@ -1,0 +1,4 @@
+# ~/.codex/config.yaml
+
+model: o4-mini-2025-04-16 # Default model
+fullAutoErrorMode: ask-user # or ignore-and-continue

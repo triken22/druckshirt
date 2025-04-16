@@ -1,203 +1,48 @@
-import * as Sentry from "@sentry/browser";
-
-/**
- * @typedef {Object} Config
- * @property {string} STRIPE_PUBLISHABLE_KEY - Stripe publishable key for payment processing
- * @property {string} API_BASE_URL - Base URL for API endpoints
- * @property {Object} POSTHOG - PostHog configuration
- * @property {string} POSTHOG.API_KEY - PostHog API key
- * @property {string} POSTHOG.HOST_URL - PostHog host URL
- * @property {Object} TOKENS - Token-related configuration
- * @property {string} TOKENS.BUNDLE_ID - Default token bundle ID
- * @property {number} TOKENS.PRICE_EUR - Price in EUR for token bundle
- * @property {Object} SENTRY - Sentry configuration
- * @property {string} SENTRY.DSN - Sentry DSN
- * @property {number} SENTRY.SAMPLE_RATE - Sentry sample rate
- */
-
-/**
- * Application configuration object.
- * Values are loaded from environment variables where available.
- * @type {Config}
- */
-const CONFIG = {
-  STRIPE_PUBLISHABLE_KEY:
-    import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "pk_test_placeholder",
-  API_BASE_URL: import.meta.env.VITE_API_BASE_URL || "/api",
-  POSTHOG: {
-    API_KEY: import.meta.env.VITE_POSTHOG_API_KEY,
-    HOST_URL:
-      import.meta.env.VITE_POSTHOG_HOST_URL || "https://us.i.posthog.com",
-  },
-  TOKENS: {
-    BUNDLE_ID: "bundle_10_tokens",
-    PRICE_EUR: 5,
-  },
-  SENTRY: {
-    DSN: import.meta.env.VITE_SENTRY_DSN || "",
-    SAMPLE_RATE: 0.2,
-  },
-};
-
-/**
- * Error types for application-specific errors
- * @enum {string}
- */
-const ErrorTypes = {
-  NETWORK: "NETWORK_ERROR",
-  API: "API_ERROR",
-  VALIDATION: "VALIDATION_ERROR",
-  PAYMENT: "PAYMENT_ERROR",
-  UPLOAD: "UPLOAD_ERROR",
-  UNKNOWN: "UNKNOWN_ERROR",
-  INITIALIZATION: "INITIALIZATION_ERROR",
-  CONFIGURATION: "CONFIGURATION_ERROR",
-};
-
-/**
- * Custom error class for application-specific errors
- * @extends Error
- */
-class AppError extends Error {
-  /**
-   * @param {string} message - Error message
-   * @param {ErrorTypes} type - Type of error
-   * @param {Object} [details] - Additional error details
-   */
-  constructor(message, type = ErrorTypes.UNKNOWN, details = {}) {
-    super(message);
-    this.name = "AppError";
-    this.type = type;
-    this.details = details;
-    this.timestamp = new Date();
-  }
-}
-
-/**
- * Retry configuration for network requests
- * @type {Object}
- */
-const RETRY_CONFIG = {
-  MAX_RETRIES: 3,
-  INITIAL_DELAY: 1000,
-  MAX_DELAY: 5000,
-  BACKOFF_FACTOR: 2,
-};
-
-// --- Sentry Initialization ---
-// Configure Sentry DSN via VITE_SENTRY_DSN environment variable
-const APP_ENV =
-  window.location.hostname === "localhost" ? "development" : "production";
-
-if (CONFIG.SENTRY.DSN) {
-  Sentry.init({
-    dsn: CONFIG.SENTRY.DSN,
-    integrations: [
-      // Default integrations handle unhandled exceptions, rejections, etc.
-    ],
-    tracesSampleRate: CONFIG.SENTRY.SAMPLE_RATE,
-    environment: APP_ENV,
-    beforeSend(event, hint) {
-      console.log("Sentry event (frontend) prepared:", event, hint);
-      return event;
-    },
-  });
-  console.log("Sentry initialized (Frontend)");
-  Sentry.setTag("environment", APP_ENV);
-} else {
-  console.warn("Sentry DSN not configured. Sentry disabled (Frontend).");
-}
-// --- End Sentry Initialization ---
-
-console.log("DruckMeinShirt frontend loaded!");
-
-// Initialize PostHog with configuration from CONFIG
-// Only initialize if the API key is actually provided
-if (CONFIG.POSTHOG.API_KEY) {
-  posthog.init(CONFIG.POSTHOG.API_KEY, {
-    api_host: CONFIG.POSTHOG.HOST_URL,
-    person_profiles: "identified_only", // Consider GDPR implications
-  });
-  console.log("PostHog initialized (Frontend)");
-} else {
-  console.warn("PostHog API Key not configured. PostHog disabled (Frontend).");
-}
-
-/**
- * Checks and returns the current PostHog opt-out state
- * @returns {Promise<boolean>} True if opted out, false if opted in
- */
-async function checkOptOutState() {
-  try {
-    const hasOptedOut = localStorage.getItem("analytics_opt_out") === "true";
-    const checkbox = document.getElementById("posthog-opt-out-toggle");
-    if (checkbox) {
-      checkbox.checked = hasOptedOut;
-    }
-    if (hasOptedOut) {
-      await window.posthog?.opt_out_capturing();
-    } else {
-      await window.posthog?.opt_in_capturing();
-    }
-  } catch (error) {
-    console.error("Error checking opt-out state:", error);
-  }
-}
-
-/**
- * Handles changes to the PostHog opt-out toggle
- * @param {Event} event - The change event from the toggle
- */
-async function handlePostHogOptOutToggle(event) {
-  try {
-    const optOut = event.target.checked;
-    localStorage.setItem("analytics_opt_out", optOut);
-    if (optOut) {
-      await window.posthog?.opt_out_capturing();
-    } else {
-      await window.posthog?.opt_in_capturing();
-    }
-  } catch (error) {
-    console.error("Error handling opt-out toggle:", error);
-    displayErrorMessage(
-      document.querySelector(".analytics-opt-out"),
-      "Failed to update analytics preferences"
-    );
-  }
-}
-
-// Initialize Stripe when the page loads
+// --- Global Variables & State ---
 let stripe = null;
-let paymentElement = null;
-let currentClientSecret = null;
-let currentGrantId = null;
+let elements = null;
+// Stripe Card Elements for token purchase and order
+let tokenCardElement = null;
+let orderCardElement = null;
+let tokenGrantId = null;
+let clientSecret = null;
+let currentProductId = null;
+let currentVariantId = null;
+let currentMockupUrl = null;
+let currentMockupImageUrl = null;
+let selectedColor = null;
+let selectedSize = null;
+let currentShippingOption = null;
 
-// --- DOM Elements ---
+// DOM Element References (Declared globally, assigned in DOMContentLoaded)
 let tokenBalanceDisplay,
   imageUploadInput,
   imageUploadButton,
+  productListDiv,
+  colorSwatchesDiv,
+  mockupImageOverlay,
+  tabButtons,
+  tabContents,
+  sizeSelectorDiv,
+  quantityInput,
+  proceedToCheckoutButton,
+  checkoutSection,
+  navButtons,
+  posthogOptOutToggle,
   imageUploadResult,
-  uploadStatus;
-let emailInput,
+  uploadStatus,
+  imagePreviewUpload,
+  emailInput,
   buyTokensButton,
   paymentElementContainer,
   submitPaymentButton,
   paymentMessage,
-  grantIdDisplay;
-let aiPromptInput, aiGenerateButton, aiStatus, aiResultsGrid;
-let productListDiv, colorSwatchesDiv, mockupImageOverlay;
-let imagePreviewUpload, imagePreviewAi;
-let tabButtons, tabContents;
-
-// --- State Variables ---
-let availableProducts = []; // Will now store more details, including placements
-let selectedProduct = null; // Will store the full product object
-let selectedVariant = null; // Includes color, size, and variant ID
-let selectedImageUrl = null; // URL of the image chosen for design
-
-// --- DOM Elements (Add Phase 3) ---
-let sizeSelectorDiv, quantityInput, proceedToCheckoutButton;
-let checkoutSection,
+  grantIdDisplay,
+  aiPromptInput,
+  aiGenerateButton,
+  aiStatus,
+  aiResultsGrid,
+  imagePreviewAi,
   orderSummaryDiv,
   shippingForm,
   shippingNameInput,
@@ -207,2250 +52,803 @@ let checkoutSection,
   shippingZipInput,
   shippingCountrySelect,
   shippingEmailInput,
-  getShippingButton;
-let shippingOptionsContainer, shippingOptionsListDiv, shippingStatusDiv;
-let tshirtPaymentContainer,
+  getShippingButton,
+  shippingOptionsContainer,
+  shippingOptionsListDiv,
+  shippingStatusDiv,
+  tshirtPaymentContainer,
   tshirtPaymentElementContainer,
   submitTshirtOrderButton,
-  tshirtPaymentMessage;
-let recoverySection,
+  tshirtPaymentMessage,
+  recoverySection,
   recoveryEmailInput,
   recoveryRequestButton,
-  recoveryMessageDiv;
-let designImageContainer, imageScaleSlider;
-let navButtons;
-
-// --- State Variables (Add Phase 3) ---
-let selectedSize = null;
-let shippingOptions = [];
-let selectedShippingOption = null;
-let tshirtClientSecret = null;
-let tshirtPaymentElement = null;
-
-// --- Mockup Interaction State & Constants (Keep near design logic) ---
-const mockupState = {
-  isDragging: false,
-  dragStartX: 0,
-  dragStartY: 0,
-  isResizing: false,
-  resizeStartX: 0,
-  resizeStartY: 0,
-  imageStartWidth: 0,
-  imageStartHeight: 0,
-  imageStartLeft: 0,
-  imageStartTop: 0,
-};
-const DESIGN_CONSTRAINTS = {
-  MIN_SCALE: 0.5,
-  MAX_SCALE: 2.0,
-  MIN_SIZE_PX: 50,
-  MAX_SIZE_PX: 500,
-  POSITION_MARGIN: 10,
-};
-let designState = {
-  scale: 1.0,
-  position: { x: 0, y: 0 },
-  rotation: 0,
-  originalSize: { width: 0, height: 0 },
-};
-
-// --- Print Area Constants (Keep near design logic) ---
-const PRINT_AREA = {
-  DPI: 300, // Standard print DPI
-  VISUAL_DPI: 150, // Visual mockup DPI
-  DEFAULT_MARGIN: 10, // Default margin in pixels
-  GUIDE_COLOR: "rgba(255, 0, 0, 0.5)", // Guide visualization color
-};
-
-// --- Moved Core Logic Function Definitions Higher ---
-
-/**
- * Handles the user's request to use an uploaded image
- * @async
- */
-async function handleUseUploadedImage() {
-  const fileInput = document.getElementById("image-upload-input");
-  const uploadButton = document.getElementById("image-upload-button");
-  const statusDisplay = document.getElementById("upload-status");
-  const previewDisplay = document.getElementById("image-preview-upload");
-
-  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-    displayMessage(
-      statusDisplay,
-      "Bitte wähle zuerst eine Datei aus.",
-      "error"
-    );
-    return;
-  }
-  const file = fileInput.files[0];
-
-  // Basic client-side validation
-  const allowedTypes = ["image/png", "image/jpeg"];
-  if (!allowedTypes.includes(file.type)) {
-    displayMessage(
-      statusDisplay,
-      "Ungültiger Dateityp. Bitte PNG oder JPG hochladen.",
-      "error"
-    );
-    return;
-  }
-  // Optional: Add size validation
-  // const maxSizeMB = 5;
-  // if (file.size > maxSizeMB * 1024 * 1024) {
-  //     displayMessage(statusDisplay, `Datei zu groß (Max: ${maxSizeMB}MB).`, 'error');
-  //     return;
-  // }
-
-  setLoadingState(uploadButton, true);
-  displayMessage(statusDisplay, "Lade Bild hoch...", "info");
-
-  await captureAnalyticsEvent("image_upload_started", {
-    file_size: file.size,
-    file_type: file.type,
-  });
-
-  try {
-    const formData = new FormData();
-    formData.append("image", file);
-
-    const data = await makeApiCall(
-      `${CONFIG.API_BASE_URL}/upload-image`,
-      {
-        method: "POST",
-        body: formData,
-      },
-      (response) => response.url && typeof response.url === "string" // Validate response
-    );
-
-    const imageUrl = data.url;
-    if (imageUrl) {
-      selectedImageUrl = imageUrl; // Store the selected URL
-      updateMockupImage(imageUrl); // Update the main mockup
-      displayMessage(statusDisplay, "Bild erfolgreich hochgeladen.", "success");
-      if (previewDisplay) {
-        previewDisplay.innerHTML = `<img src="${imageUrl}" alt="Hochgeladenes Bild">`;
-      }
-      await captureAnalyticsEvent("image_upload_completed", {
-        success: true,
-        image_url: imageUrl,
-      });
-    } else {
-      throw new AppError("No image URL returned from server", ErrorTypes.API);
-    }
-  } catch (error) {
-    console.error("Image upload failed:", error);
-    displayErrorMessage(statusDisplay, error); // Use centralized error display
-    if (previewDisplay) previewDisplay.innerHTML = "";
-    await captureErrorEvent(error, "image_upload", {
-      file_type: file.type,
-      file_size: file.size,
-    });
-  } finally {
-    setLoadingState(uploadButton, false);
-    // Don't clear file input automatically, user might want to re-try upload
-    // if (fileInput) fileInput.value = "";
-  }
-}
-
-function initializeDesignControls() {
-  const designContainer = document.querySelector(".design-container");
-  const selectedDesign = document.getElementById("selected-design");
-  const rotateLeftBtn = document.getElementById("rotate-left");
-  const rotateRightBtn = document.getElementById("rotate-right");
-  const resetPositionBtn = document.getElementById("reset-position");
-
-  // Design interaction state
-  let currentRotation = 0;
-  let currentPosition = { x: 0, y: 0 };
-  let isDragging = false;
-  let dragStart = { x: 0, y: 0 };
-
-  // --- Add Null Checks before adding listeners ---
-  if (!designContainer) {
-    console.warn("initializeDesignControls: .design-container not found.");
-    return; // Exit if main container is missing
-  }
-  // selectedDesign is checked within updateDesignTransform
-
-  function startDragging(e) {
-    // ... (keep existing function content) ...
-    if (!e.target.closest(".design-container")) return;
-    isDragging = true;
-    dragStart = {
-      x: e.clientX - currentPosition.x,
-      y: e.clientY - currentPosition.y,
-    };
-  }
-
-  function handleDragging(e) {
-    // ... (keep existing function content) ...
-    if (!isDragging) return;
-    e.preventDefault();
-
-    currentPosition = {
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y,
-    };
-
-    updateDesignTransform();
-  }
-
-  function stopDragging() {
-    // ... (keep existing function content) ...
-    isDragging = false;
-  }
-
-  // Rotation controls (Add null checks)
-  if (rotateLeftBtn) {
-    rotateLeftBtn.addEventListener("click", () => {
-      currentRotation = (currentRotation - 90) % 360;
-      updateDesignTransform();
-    });
-  } else {
-    console.warn("initializeDesignControls: #rotate-left not found.");
-  }
-
-  if (rotateRightBtn) {
-    rotateRightBtn.addEventListener("click", () => {
-      currentRotation = (currentRotation + 90) % 360;
-      updateDesignTransform();
-    });
-  } else {
-    console.warn("initializeDesignControls: #rotate-right not found.");
-  }
-
-  if (resetPositionBtn) {
-    resetPositionBtn.addEventListener("click", () => {
-      currentRotation = 0;
-      currentPosition = { x: 0, y: 0 };
-      updateDesignTransform();
-    });
-  } else {
-    console.warn("initializeDesignControls: #reset-position not found.");
-  }
-  // --- End Null Checks for Buttons ---
-
-  // Drag functionality (Listener attached to designContainer which is checked above)
-  designContainer.addEventListener("mousedown", startDragging);
-  document.addEventListener("mousemove", handleDragging); // Global listener OK
-  document.addEventListener("mouseup", stopDragging); // Global listener OK
-
-  // Touch support for design container (Listener attached to designContainer)
-  designContainer.addEventListener("touchstart", handleTouchStart);
-  document.addEventListener("touchmove", handleTouchMove); // Global listener OK
-  document.addEventListener("touchend", handleTouchEnd); // Global listener OK
-
-  function updateDesignTransform() {
-    // Add null check for selectedDesign
-    const selectedDesign = document.getElementById("selected-design");
-    if (!selectedDesign) {
-      // console.debug("updateDesignTransform: #selected-design not found yet.");
-      return; // Don't try to update if the element isn't there
-    }
-    selectedDesign.style.transform = `
-      translate(${currentPosition.x}px, ${currentPosition.y}px)
-      rotate(${currentRotation}deg)
-    `;
-  }
-}
-
-// --- State Persistence Functions (Keep Together) ---
-function saveDesignState() {
-  // Save relevant state needed for restoration
-  const stateToSave = {
-    // Design transformations
-    scale: designState.scale,
-    position: designState.position,
-    rotation: designState.rotation,
-    originalSize: designState.originalSize,
-    // Selections
-    productId: selectedProduct?.id || null,
-    variantId: selectedVariant?.id || null, // Save variant ID
-    size: selectedSize || null, // Save selected size string
-    imageUrl: selectedImageUrl || null,
-    quantity: quantityInput?.value ? parseInt(quantityInput.value, 10) : 1,
-  };
-
-  try {
-    sessionStorage.setItem(
-      "druckmeinshirt_design_state",
-      JSON.stringify(stateToSave)
-    );
-    // console.log("Saved design state:", stateToSave);
-  } catch (error) {
-    console.error("Error saving design state to sessionStorage:", error);
-    // Optionally clear storage if it's full or corrupted
-    // sessionStorage.removeItem("druckmeinshirt_design_state");
-  }
-}
-
-function restoreDesignState() {
-  const savedStateJSON = sessionStorage.getItem("druckmeinshirt_design_state");
-  if (!savedStateJSON) {
-    // console.log("No saved design state found.");
-    return false; // No state saved
-  }
-
-  try {
-    const state = JSON.parse(savedStateJSON);
-    // console.log("Restoring design state:", state);
-
-    // Restore design transformations
-    designState = {
-      scale: state.scale || 1.0,
-      position: state.position || { x: 0, y: 0 },
-      rotation: state.rotation || 0,
-      originalSize: state.originalSize || { width: 0, height: 0 },
-    };
-
-    // Restore product selection if available
-    // Need to ensure availableProducts is populated first!
-    if (state.productId && availableProducts.length > 0) {
-      selectedProduct = availableProducts.find((p) => p.id === state.productId);
-      if (selectedProduct) {
-        // Don't call updateProductDisplay yet, wait until all state is restored
-      } else {
-        console.warn(`Saved product ID ${state.productId} not found.`);
-        return false; // Cannot restore fully if product missing
-      }
-    } else {
-      // console.log("No product ID saved or products not loaded yet.");
-      return false; // Cannot restore without product context
-    }
-
-    // Restore image if available
-    if (state.imageUrl) {
-      selectedImageUrl = state.imageUrl;
-      // Update the mockup image directly without triggering full updates yet
-      if (designImageContainer) {
-        designImageContainer.innerHTML = `
-              <img src="${state.imageUrl}" alt="Design" style="width: 100%; height: 100%;">
-              <div class="resize-handle"></div>
-            `;
-        // Apply restored size and position
-        designImageContainer.style.width = `${
-          state.originalSize?.width * state.scale
-        }px`;
-        designImageContainer.style.height = `${
-          state.originalSize?.height * state.scale
-        }px`;
-        designImageContainer.style.left = `${state.position?.x}px`;
-        designImageContainer.style.top = `${state.position?.y}px`;
-        designImageContainer.style.transform = `rotate(${state.rotation}deg)`; // Apply rotation
-        designImageContainer.style.display = "block";
-
-        // Update scale slider
-        if (imageScaleSlider) {
-          imageScaleSlider.value = state.scale;
-        }
-      } else {
-        console.warn("Cannot restore image, designImageContainer not found.");
-      }
-    } else {
-      // console.log("No image URL saved.");
-      // No need to return false, design might not have image yet
-    }
-
-    // Restore variant and size if available (after product and colors are potentially set)
-    if (state.variantId && selectedProduct) {
-      // Find the color associated with the variant ID
-      const restoredVariant = selectedProduct.variants.find(
-        (v) => v.id === state.variantId
-      );
-      if (restoredVariant) {
-        selectedColorName = restoredVariant.color; // Restore color name
-        selectedColorCode = restoredVariant.color_code; // Restore color code
-        selectedSize = restoredVariant.size; // Restore size
-        selectedVariant = restoredVariant; // Restore the variant object
-
-        // Visually update color swatches and size selector based on restored state
-        displayColorSwatches(selectedProduct);
-        const colorSwatch = colorSwatchesDiv?.querySelector(
-          `.color-swatch[data-color-name="${selectedColorName}"]`
-        );
-        if (colorSwatch) colorSwatch.classList.add("selected");
-
-        displaySizeSelector(selectedProduct, selectedColorName);
-        const sizeButton = sizeSelectorDiv?.querySelector(
-          `.size-button[data-size="${selectedSize}"]`
-        );
-        if (sizeButton) sizeButton.classList.add("selected");
-
-        // updateVariantDisplay(); // No need to call here as we fully restored the variant
-      } else {
-        console.warn(
-          `Saved variant ID ${state.variantId} not found in product ${selectedProduct.id}.`
-        );
-        // Don't select variant if not found
-        selectedVariant = null;
-        selectedSize = null;
-        // If variant ID is invalid, try restoring just size if available
-        if (state.size) {
-          selectedSize = state.size;
-          // Try finding color from a potentially saved variable or default
-          if (selectedColorName) {
-            // Requires selectedColorName to be potentially restored or set earlier
-            const sizeButton = sizeSelectorDiv?.querySelector(
-              `.size-button[data-size="${selectedSize}"]`
-            );
-            if (sizeButton) sizeButton.classList.add("selected");
-            updateVariantDisplay(); // Call updateVariantDisplay to find variant by color/size
-          }
-        }
-      }
-    } else if (state.size && selectedProduct && selectedColorName) {
-      // Fallback: If only size was saved (and color is known)
-      selectedSize = state.size;
-      const sizeButton = sizeSelectorDiv?.querySelector(
-        `.size-button[data-size="${selectedSize}"]`
-      );
-      if (sizeButton) sizeButton.classList.add("selected");
-      // Attempt to find variant based on restored color and size
-      updateVariantDisplay(); // Call updateVariantDisplay here
-    } else {
-      // No variant/size saved or product/color context missing.
-      selectedVariant = null;
-      selectedSize = null;
-    }
-
-    // Restore quantity if available
-    if (state.quantity && quantityInput) {
-      quantityInput.value = state.quantity;
-    } else if (quantityInput) {
-      quantityInput.value = 1; // Default
-    }
-
-    // Trigger necessary UI updates now that state is restored
-    updatePrintAreaGuides(); // Requires selectedProduct
-    checkDesignCompletion(); // Check status with restored state
-
-    console.log("Design state successfully restored.");
-    return true;
-  } catch (error) {
-    console.error("Error restoring design state:", error);
-    // Clear potentially corrupted state
-    sessionStorage.removeItem("druckmeinshirt_design_state");
-    return false;
-  }
-}
-
-// --- Print Area / Mockup Update Functions (Keep Together) ---
-function updatePrintAreaGuides() {
-  if (!mockupImageOverlay || !selectedProduct) return;
-
-  // Find front placement data
-  const frontPlacement = selectedProduct.placements?.find(
-    (p) => p.placement === "front"
-  );
-  if (!frontPlacement) {
-    console.error("Front placement data not found");
-    return;
-  }
-
-  // Remove existing guides
-  const existingGuide = mockupImageOverlay.querySelector(".print-area-guide");
-  if (existingGuide) {
-    existingGuide.remove();
-  }
-
-  // Create print area guide
-  const guide = document.createElement("div");
-  guide.classList.add("print-area-guide");
-
-  // Calculate visual dimensions
-  const visualWidth =
-    (frontPlacement.print_area_width_px / PRINT_AREA.DPI) *
-    PRINT_AREA.VISUAL_DPI;
-  const visualHeight =
-    (frontPlacement.print_area_height_px / PRINT_AREA.DPI) *
-    PRINT_AREA.VISUAL_DPI;
-
-  // Style the guide
-  Object.assign(guide.style, {
-    position: "absolute",
-    width: `${visualWidth}px`,
-    height: `${visualHeight}px`,
-    border: `2px dashed ${PRINT_AREA.GUIDE_COLOR}`,
-    pointerEvents: "none",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-  });
-
-  // Add guide to mockup
-  mockupImageOverlay.appendChild(guide);
-
-  // Update design constraints based on print area
-  DESIGN_CONSTRAINTS.MAX_SIZE_PX = Math.min(
-    visualWidth - 2 * PRINT_AREA.DEFAULT_MARGIN,
-    visualHeight - 2 * PRINT_AREA.DEFAULT_MARGIN
-  );
-}
-
-function updateMockupImage(imageUrl) {
-  if (!designImageContainer || !imageUrl) return;
-
-  // Create new image to get original dimensions
-  const img = new Image();
-  img.onload = () => {
-    // Store original size
-    designState.originalSize = {
-      width: img.width,
-      height: img.height,
-    };
-
-    // Create design image element
-    designImageContainer.innerHTML = `
-      <img src="${imageUrl}" alt="Design" style="width: 100%; height: 100%;">
-      <div class="resize-handle"></div>
-    `;
-
-    // Reset position and scale
-    designState.position = {
-      x: DESIGN_CONSTRAINTS.POSITION_MARGIN,
-      y: DESIGN_CONSTRAINTS.POSITION_MARGIN,
-    };
-    designState.scale = 1.0;
-
-    // Apply initial position and size
-    designImageContainer.style.left = `${designState.position.x}px`;
-    designImageContainer.style.top = `${designState.position.y}px`;
-    updateDesignSize(img.width, img.height);
-
-    // Show design container
-    designImageContainer.style.display = "block";
-
-    // Save state
-    saveDesignState();
-
-    // Update completion status
-    checkDesignCompletion();
-  };
-  img.src = imageUrl;
-}
-
-function updateDesignPosition(deltaX, deltaY) {
-  if (!designImageContainer || !mockupImageOverlay) return;
-
-  const guide = mockupImageOverlay.querySelector(".print-area-guide");
-  if (!guide) return;
-
-  const guideBounds = guide.getBoundingClientRect();
-  const imageBounds = designImageContainer.getBoundingClientRect();
-
-  // Calculate new position with print area constraints
-  const newLeft = mockupState.dragStartX + deltaX;
-  const newTop = mockupState.dragStartY + deltaY;
-
-  // Apply print area constraints
-  const maxLeft =
-    guideBounds.right - imageBounds.width - PRINT_AREA.DEFAULT_MARGIN;
-  const maxTop =
-    guideBounds.bottom - imageBounds.height - PRINT_AREA.DEFAULT_MARGIN;
-  const minLeft = guideBounds.left + PRINT_AREA.DEFAULT_MARGIN;
-  const minTop = guideBounds.top + PRINT_AREA.DEFAULT_MARGIN;
-
-  designState.position = {
-    x: Math.max(minLeft, Math.min(maxLeft, newLeft)),
-    y: Math.max(minTop, Math.min(maxTop, newTop)),
-  };
-
-  // Update element position
-  designImageContainer.style.left = `${designState.position.x}px`;
-  designImageContainer.style.top = `${designState.position.y}px`;
-
-  // Save state
-  saveDesignState();
-
-  // Check design completion
-  checkDesignCompletion();
-}
-
-function updateDesignSize(width, height) {
-  if (!designImageContainer) return;
-
-  // Calculate aspect ratio
-  const aspectRatio =
-    designState.originalSize.width / designState.originalSize.height;
-
-  // Constrain size while maintaining aspect ratio
-  let newWidth = Math.max(
-    DESIGN_CONSTRAINTS.MIN_SIZE_PX,
-    Math.min(DESIGN_CONSTRAINTS.MAX_SIZE_PX, width)
-  );
-  let newHeight = newWidth / aspectRatio;
-
-  // Adjust if height exceeds constraints
-  if (
-    newHeight < DESIGN_CONSTRAINTS.MIN_SIZE_PX ||
-    newHeight > DESIGN_CONSTRAINTS.MAX_SIZE_PX
-  ) {
-    newHeight = Math.max(
-      DESIGN_CONSTRAINTS.MIN_SIZE_PX,
-      Math.min(DESIGN_CONSTRAINTS.MAX_SIZE_PX, height)
-    );
-    newWidth = newHeight * aspectRatio;
-  }
-
-  // Update element size
-  designImageContainer.style.width = `${newWidth}px`;
-  designImageContainer.style.height = `${newHeight}px`;
-
-  // Update scale based on original size
-  designState.scale = newWidth / designState.originalSize.width;
-
-  // Update scale slider if available
-  if (imageScaleSlider) {
-    imageScaleSlider.value = designState.scale;
-  }
-
-  // Save state
-  saveDesignState();
-}
-
-function updateDesignScale(scale) {
-  if (!designImageContainer || !designState.originalSize.width) return;
-
-  // Constrain scale
-  const newScale = Math.max(
-    DESIGN_CONSTRAINTS.MIN_SCALE,
-    Math.min(DESIGN_CONSTRAINTS.MAX_SCALE, scale)
-  );
-
-  // Calculate new dimensions
-  const newWidth = designState.originalSize.width * newScale;
-  const newHeight = designState.originalSize.height * newScale;
-
-  // Update size
-  updateDesignSize(newWidth, newHeight);
-}
-
-// --- Selection Handlers (Keep Together) ---
-async function handleProductSelection(event) {
-  const productElement = event.target.closest(".product-item");
-  if (!productElement) return;
-
-  const productId = productElement.dataset.productId;
-  selectedProduct = availableProducts.find((p) => p.id === productId);
-
-  await captureAnalyticsEvent("product_selected", {
-    product_id: productId,
-    product_type: selectedProduct.type,
-    product_name: selectedProduct.name,
-  });
-
-  updateProductDisplay();
-}
-
-async function handleColorSelection(event) {
-  const colorElement = event.target.closest(".color-swatch");
-  if (!colorElement || !selectedProduct) return;
-
-  // Clear previously selected swatch
-  document
-    .querySelectorAll(".color-swatch.selected")
-    .forEach((el) => el.classList.remove("selected"));
-  // Mark new swatch as selected
-  colorElement.classList.add("selected");
-
-  selectedColorName = colorElement.dataset.colorName; // Store selected color name
-  selectedColorCode = colorElement.dataset.colorCode; // Store selected color code
-
-  console.log("Color selected:", selectedColorName);
-
-  await captureAnalyticsEvent("tshirt_color_selected", {
-    product_id: selectedProduct?.id,
-    color_name: selectedColorName,
-    color_code: selectedColorCode,
-  });
-
-  // Update the size selector for the new color
-  displaySizeSelector(selectedProduct, selectedColorName);
-  // Attempt to update the variant (will reset size if needed)
-  selectedSize = null; // Reset size when color changes
-  updateVariantDisplay(); // This will update selectedVariant and call checkDesignCompletion
-
-  // Update mockup visual background/base if needed (assuming a base image per product)
-  // updateMockupBaseImage(selectedProduct.base_image_url, selectedColorCode);
-}
-
-async function handleSizeSelection(event) {
-  const sizeElement = event.target.closest(".size-button");
-  if (!sizeElement || !selectedProduct || !selectedColorName) return;
-
-  // Clear previously selected size
-  document
-    .querySelectorAll(".size-button.selected")
-    .forEach((el) => el.classList.remove("selected"));
-  // Mark new size as selected
-  sizeElement.classList.add("selected");
-
-  selectedSize = sizeElement.dataset.size; // Store selected size
-  console.log("Size selected:", selectedSize);
-
-  await captureAnalyticsEvent("tshirt_size_selected", {
-    product_id: selectedProduct?.id,
-    color_name: selectedColorName, // Include color context
-    size: selectedSize,
-  });
-
-  // Attempt to update the variant with the selected size and current color
-  updateVariantDisplay(); // This will update selectedVariant and call checkDesignCompletion
-}
-
-function handleQuantityChange() {
-  // ... (Keep existing function body) ...
-}
-
-async function handleAiImageSelection(event) {
-  try {
-    const imageUrl = event.target.src;
-    // ... existing image selection logic ...
-
-    await captureAnalyticsEvent("ai_image_selected", {
-      selected_image_url: imageUrl,
-    });
-
-    displaySelectedImage(imageUrl);
-  } catch (error) {
-    await captureErrorEvent(error, "ai_image_selection");
-    throw error;
-  }
-}
-
-// --- UI Update Functions (Keep Together) ---
-function displayProducts(products) {
-  productListDiv.innerHTML = ""; // Clear existing
-  if (!products || products.length === 0) {
-    productListDiv.innerHTML =
-      "<p>Keine Produkte gefunden oder Fehler beim Laden.</p>";
-    return;
-  }
-  products.forEach((product) => {
-    const productDiv = document.createElement("div");
-    productDiv.classList.add("product-item", "card");
-    productDiv.dataset.productId = product.id;
-
-    // Create a placeholder SVG as a data URL
-    const placeholderSvg = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">
-        <rect width="50" height="50" fill="#eee"/>
-        <text x="50%" y="50%" font-family="Arial" font-size="8" fill="#aaa" text-anchor="middle" dy=".3em">No Image</text>
-      </svg>
-    `)}`;
-
-    // Safely get the image URL
-    const imageUrl = product.default_image_url;
-    let imageHtml = "";
-
-    // Create image element with error handling
-    imageHtml = `<img 
-      src="${imageUrl || placeholderSvg}" 
-      alt="${product.name}" 
-      style="width: 50px; height: 50px; object-fit: cover; margin-right: 10px; vertical-align: middle; border-radius: 3px;"
-      onerror="this.onerror=null; this.src='${placeholderSvg}';"
-    >`;
-
-    productDiv.innerHTML = `
-      ${imageHtml}
-      <span>${product.name}</span>
-    `;
-
-    productDiv.addEventListener("click", handleProductSelection);
-    productListDiv.appendChild(productDiv);
-  });
-}
-
-function displayColorSwatches(product) {
-  if (!colorSwatchesDiv) return;
-  colorSwatchesDiv.innerHTML = ""; // Clear previous swatches
-
-  if (
-    !product ||
-    !product.available_colors ||
-    product.available_colors.length === 0
-  ) {
-    colorSwatchesDiv.innerHTML =
-      "<p>Keine Farben für dieses Produkt verfügbar.</p>";
-    return;
-  }
-
-  product.available_colors.forEach((color) => {
-    const swatch = document.createElement("div");
-    swatch.classList.add("color-swatch");
-    swatch.style.backgroundColor = color.code; // Use color code for background
-    swatch.title = color.name; // Tooltip with color name
-    swatch.dataset.colorName = color.name;
-    swatch.dataset.colorCode = color.code;
-    colorSwatchesDiv.appendChild(swatch);
-  });
-}
-
-function displaySizeSelector(product, selectedColorName) {
-  if (!sizeSelectorDiv) return;
-  sizeSelectorDiv.innerHTML = ""; // Clear previous
-
-  // Find variants that match the selected color
-  const variantsOfColor = product.variants.filter(
-    (v) => v.color === selectedColorName && v.in_stock
-  );
-
-  if (variantsOfColor.length === 0) {
-    sizeSelectorDiv.innerHTML =
-      "<p>Keine Größen für diese Farbe verfügbar.</p>";
-    return;
-  }
-
-  // Create buttons for each available size
-  const availableSizes = [...new Set(variantsOfColor.map((v) => v.size))]; // Unique sizes for the color
-  availableSizes.sort(); // Optional: sort sizes
-
-  availableSizes.forEach((size) => {
-    const button = document.createElement("button");
-    button.classList.add("size-button");
-    button.textContent = size;
-    button.dataset.size = size;
-    sizeSelectorDiv.appendChild(button);
-  });
-}
-
-function updateVariantDisplay() {
-  if (!selectedProduct || !selectedColorName || !selectedSize) {
-    selectedVariant = null; // Reset if any part is missing
-    console.log("Resetting selectedVariant due to missing product/color/size");
-    return;
-  }
-
-  // Find the specific variant matching BOTH selected color name and size
-  const matchedVariant = selectedProduct.variants?.find(
-    (v) =>
-      v.color === selectedColorName && v.size === selectedSize && v.in_stock
-  );
-
-  if (matchedVariant) {
-    selectedVariant = matchedVariant;
-    console.log("Selected Variant Updated:", selectedVariant);
-    // Update any UI elements that depend directly on the variant ID if needed
-    // e.g., display price if variant has specific price
-  } else {
-    selectedVariant = null; // Reset if no matching variant found
-    console.warn(
-      `No matching variant found for Color: ${selectedColorName}, Size: ${selectedSize}`
-    );
-    // Optionally display a message to the user
-    displayMessage(
-      document.getElementById("design-status"),
-      `Größe ${selectedSize} ist für Farbe ${selectedColorName} nicht verfügbar.`,
-      "error"
-    );
-  }
-  // Always check completion after attempting to update variant
-  checkDesignCompletion();
-}
-
-function checkDesignCompletion() {
-  // Now explicitly checks selectedVariant which is updated by updateVariantDisplay
-  const placementValid = validateDesignPlacement(); // Check placement validity
-  const isComplete = !!(
-    selectedProduct &&
-    selectedVariant && // This is now reliably set or null
-    selectedImageUrl &&
-    quantityInput?.value >= 1 &&
-    placementValid // Use the checked value
-  );
-
-  console.log("Checking Design Completion:", {
-    selectedProduct: !!selectedProduct,
-    selectedVariant: !!selectedVariant, // Log if variant is set
-    selectedImageUrl: !!selectedImageUrl,
-    quantity: quantityInput?.value,
-    placementValid: placementValid, // Log placement validation result explicitly
-  });
-
-  if (proceedToCheckoutButton) {
-    proceedToCheckoutButton.disabled = !isComplete;
-
-    let message = "";
-    if (!isComplete) {
-      // Provide more specific feedback
-      if (!selectedProduct) message = "Bitte wähle ein Produkt.";
-      else if (!selectedColorName) message = "Bitte wähle eine Farbe.";
-      else if (!selectedSize) message = "Bitte wähle eine Größe.";
-      else if (!selectedVariant)
-        message = `Die Größe ${selectedSize} ist für Farbe ${selectedColorName} nicht verfügbar.`;
-      else if (!selectedImageUrl)
-        message = "Bitte füge ein Design hinzu (Upload oder AI).";
-      else if (!quantityInput?.value || quantityInput.value < 1)
-        message = "Bitte gib eine Menge an.";
-      else if (!placementValid)
-        message = "Dein Design liegt außerhalb des Druckbereichs.";
-      else message = "Bitte vervollständige dein Design.";
-    } else {
-      message = "Design bereit für Checkout.";
-    }
-
-    displayMessage(
-      document.getElementById("design-status"),
-      message,
-      isComplete ? "success" : "info" // Use info for incomplete steps
-    );
-  }
-
-  return isComplete;
-}
-
-// --- Section/Tab Switching (Keep Together) ---
-function switchTab(targetId) {
-  // Find all tab buttons and content
-  const buttons = document.querySelectorAll(".tab-button");
-  const contents = document.querySelectorAll(".tab-content");
-
-  // Remove active class from all buttons and content
-  buttons.forEach((button) => button.classList.remove("active"));
-  contents.forEach((content) => content.classList.remove("active"));
-
-  // Add active class to the clicked button and corresponding content
-  const targetButton = document.querySelector(
-    `.tab-button[data-target="${targetId}"]`
-  );
-  const targetContent = document.getElementById(targetId);
-
-  if (targetButton) {
-    targetButton.classList.add("active");
-  }
-  if (targetContent) {
-    targetContent.classList.add("active");
-  } else {
-    console.error(`Tab content with ID '${targetId}' not found.`);
-  }
-
-  // Capture tab switch event
-  captureAnalyticsEvent("tab_switched", { tab_id: targetId });
-}
-
-function showSection(sectionId) {
-  const sections = document.querySelectorAll(".section");
-  sections.forEach((section) => {
-    section.style.display = section.id === sectionId ? "block" : "none";
-  });
-
-  // Update active state for nav buttons
-  const navButtons = document.querySelectorAll(".nav-button");
-  navButtons.forEach((button) => {
-    if (button.dataset.target === sectionId) {
-      button.classList.add("active");
-    } else {
-      button.classList.remove("active");
-    }
-  });
-
-  trackPageView(sectionId);
-}
-
-// --- API & Token Functions (Keep Together) ---
-function getTokenGrantId() {
-  return localStorage.getItem("token_grant_id");
-}
-
-function saveTokenGrantId(grantId) {
-  if (!grantId) {
-    console.warn("Attempted to save invalid grant_id");
-    return false;
-  }
-  localStorage.setItem("token_grant_id", grantId);
-  return true;
-}
-
-async function fetchAndDisplayTokenBalance() {
-  const grantId = getTokenGrantId();
-  const balanceDisplay = document.getElementById("token-balance-display");
-
-  if (!grantId) {
-    balanceDisplay.textContent = "Tokens: 0";
-    return 0;
-  }
-
-  try {
-    const response = await makeApiCall(
-      `/api/get-token-balance?grant_id=${encodeURIComponent(grantId)}`
-    );
-    const balance = response.tokens_remaining;
-
-    balanceDisplay.textContent = `Tokens: ${balance}`;
-
-    // Update UI elements based on balance
-    const aiGenerateButton = document.getElementById("ai-generate-button");
-    if (aiGenerateButton) {
-      aiGenerateButton.disabled = balance <= 0;
-      aiGenerateButton.title =
-        balance <= 0 ? "Keine Tokens verfügbar" : "Generieren (1 Token)";
-    }
-
-    return balance;
-  } catch (error) {
-    await captureErrorEvent(error, "token_balance_check");
-    balanceDisplay.textContent = "Tokens: Fehler";
-    return 0;
-  }
-}
-
-async function validateTokenUsage() {
-  const grantId = getTokenGrantId();
-  if (!grantId) {
-    displayMessage(
-      document.getElementById("ai-status"),
-      "Bitte kaufe zuerst Tokens, um die AI-Generierung zu nutzen.",
-      "error"
-    );
-    return false;
-  }
-
-  const balance = await fetchAndDisplayTokenBalance();
-  if (balance <= 0) {
-    displayMessage(
-      document.getElementById("ai-status"),
-      "Keine Tokens verfügbar. Bitte kaufe neue Tokens.",
-      "error"
-    );
-    return false;
-  }
-
-  return true;
-}
-
-async function handleAiGenerate() {
-  const generateButton = document.getElementById("ai-generate-button");
-  const promptInput = document.getElementById("ai-prompt-input");
-  const statusElement = document.getElementById("ai-status");
-
-  try {
-    setLoadingState(generateButton, true);
-
-    if (!(await validateTokenUsage())) {
-      return;
-    }
-
-    const prompt = promptInput.value.trim();
-    if (!prompt) {
-      displayMessage(statusElement, "Bitte gib einen Prompt ein.", "error");
-      return;
-    }
-
-    // Capture analytics before API call
-    await captureAnalyticsEvent("ai_prompt_submitted", {
-      prompt_length: prompt.length,
-    });
-
-    // Make API call with grant_id
-    const response = await makeApiCall("/api/generate-image", {
-      method: "POST",
-      body: JSON.stringify({
-        prompt,
-        grant_id: getTokenGrantId(),
-      }),
-    });
-
-    // Handle successful generation
-    displayAiResults(response.images);
-
-    // Update token balance after successful generation
-    await fetchAndDisplayTokenBalance();
-
-    await captureAnalyticsEvent("ai_image_generated", {
-      success: true,
-      num_images: response.images.length,
-    });
-  } catch (error) {
-    await captureErrorEvent(error, "ai_generation");
-    displayMessage(
-      statusElement,
-      "Fehler bei der Bildgenerierung: " + error.message,
-      "error"
-    );
-  } finally {
-    setLoadingState(generateButton, false);
-  }
-}
-
-async function makeApiCall(url, options = {}, validator = null) {
-  let lastError = null;
-
-  for (let attempt = 0; attempt <= RETRY_CONFIG.MAX_RETRIES; attempt++) {
-    try {
-      if (attempt > 0) {
-        const delay = getRetryDelay(attempt);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-
-      const response = await fetch(url, options);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new AppError(
-          data.error || `HTTP error! status: ${response.status}`,
-          ErrorTypes.API,
-          { status: response.status, data }
-        );
-      }
-
-      if (validator && !validator(data)) {
-        throw new AppError("Invalid response format", ErrorTypes.API, { data });
-      }
-
-      return data;
-    } catch (error) {
-      lastError =
-        error instanceof AppError
-          ? error
-          : new AppError(
-              error.message,
-              error instanceof TypeError
-                ? ErrorTypes.NETWORK
-                : ErrorTypes.UNKNOWN,
-              { originalError: error }
-            );
-
-      // Don't retry on validation errors or if max retries reached
-      if (
-        lastError.type === ErrorTypes.VALIDATION ||
-        attempt === RETRY_CONFIG.MAX_RETRIES
-      ) {
-        break;
-      }
-
-      // Log retry attempt
-      console.warn(
-        `API call failed, attempt ${attempt + 1}/${RETRY_CONFIG.MAX_RETRIES}:`,
-        lastError
-      );
-
-      // Track error in PostHog
-      if (window.posthog) {
-        window.posthog.capture("api_call_retry", {
-          url: url,
-          attempt: attempt + 1,
-          error_type: lastError.type,
-          error_message: lastError.message,
-        });
-      }
-    }
-  }
-
-  // Track final failure in PostHog
-  if (window.posthog) {
-    window.posthog.capture("api_call_failed", {
-      url: url,
-      error_type: lastError.type,
-      error_message: lastError.message,
-      attempts: RETRY_CONFIG.MAX_RETRIES,
-    });
-  }
-
-  // Log to Sentry with context
-  Sentry.captureException(lastError, {
-    tags: {
-      api_url: url,
-      error_type: lastError.type,
-    },
-    extra: {
-      attempts: RETRY_CONFIG.MAX_RETRIES,
-      options: options,
-      timestamp: new Date().toISOString(),
-    },
-  });
-
-  throw lastError;
-}
-
-// --- Payment/Checkout Functions (Keep Together) ---
-async function initiateTokenPurchase() {
-  try {
-    const email = emailInput.value.trim();
-
-    if (!email) {
-      displayMessage(
-        paymentMessage,
-        "Bitte gib deine Email-Adresse ein.",
-        "error"
-      );
-      return;
-    }
-
-    if (!stripe) {
-      displayMessage(
-        paymentMessage,
-        "Stripe wurde nicht korrekt initialisiert.",
-        "error"
-      );
-      return;
-    }
-
-    setLoadingState(buyTokensButton, true);
-    displayMessage(paymentMessage, "Initiiere Zahlung...", "info");
-
-    // Track purchase initiation in PostHog
-    if (window.posthog) {
-      window.posthog.capture("token_purchase_initiated", {
-        bundle_id: CONFIG.TOKENS.BUNDLE_ID,
-        price_eur: CONFIG.TOKENS.PRICE_EUR,
-      });
-    }
-
-    const data = await makeApiCall(
-      `${CONFIG.API_BASE_URL}/stripe/create-token-purchase-intent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          bundle_id: CONFIG.TOKENS.BUNDLE_ID,
-          email: email,
-        }),
-      },
-      (response) => response.client_secret && response.grant_id
-    );
-
-    currentClientSecret = data.client_secret;
-    currentGrantId = data.grant_id;
-
-    // Initialize Stripe payment element
-    const elements = stripe.elements({
-      clientSecret: currentClientSecret,
-      appearance: {
-        theme: "stripe",
-        variables: {
-          colorPrimary: "#3498db",
-        },
-      },
-    });
-
-    if (paymentElement) {
-      paymentElement.destroy();
-    }
-
-    paymentElement = elements.create("payment");
-    paymentElement.mount("#payment-element-container");
-
-    // Show the payment form and submit button
-    paymentElementContainer.style.display = "block";
-    submitPaymentButton.style.display = "block";
-    buyTokensButton.style.display = "none";
-
-    displayMessage(
-      paymentMessage,
-      "Bitte gib deine Zahlungsinformationen ein.",
-      "info"
-    );
-  } catch (error) {
-    await captureErrorEvent(error, "token_purchase_initiation");
-    throw error;
-  } finally {
-    setLoadingState(buyTokensButton, false);
-  }
-}
-
-async function handleTokenPaymentSubmit() {
-  if (!stripe || !currentClientSecret) {
-    displayMessage(
-      paymentMessage,
-      "Zahlungsinitialisierung fehlgeschlagen.",
-      "error"
-    );
-    return;
-  }
-
-  setLoadingState(submitPaymentButton, true);
-  displayMessage(paymentMessage, "Verarbeite Zahlung...", "info");
-
-  await captureAnalyticsEvent("payment_submission_started", {
-    grant_id: currentGrantId,
-    client_secret_present: !!currentClientSecret,
-  });
-
-  try {
-    const { error: submitError } = await stripe.confirmPayment({
-      elements: paymentElement,
-      confirmParams: {
-        return_url: window.location.href,
-      },
-      redirect: "if_required",
-    });
-
-    if (submitError) {
-      throw new AppError(submitError.message, ErrorTypes.PAYMENT, {
-        code: submitError.code,
-      });
-    }
-
-    displayMessage(paymentMessage, "Zahlung erfolgreich!", "success");
-    await captureAnalyticsEvent("payment_submission_completed", {
-      success: true,
-      grant_id: currentGrantId,
-    });
-
-    // Refresh token balance after successful payment
-    await fetchAndDisplayTokenBalance();
-  } catch (error) {
-    console.error("Payment submission failed:", error);
-    displayMessage(
-      paymentMessage,
-      "Zahlung fehlgeschlagen. Bitte versuchen Sie es erneut.",
-      "error"
-    );
-    await captureErrorEvent(error, "payment_submission", {
-      grant_id: currentGrantId,
-    });
-  } finally {
-    setLoadingState(submitPaymentButton, false);
-  }
-}
-
-async function handleProceedToCheckout() {
-  try {
-    // ... existing checkout logic ...
-
-    await captureAnalyticsEvent("checkout_started", {
-      product_id: currentProduct.id,
-      color: selectedColor,
-      size: selectedSize,
-      quantity: selectedQuantity,
-    });
-
-    // Continue with checkout flow
-  } catch (error) {
-    await captureErrorEvent(error, "checkout_initiation");
-    throw error;
-  }
-}
-
-async function handleGetShippingOptions() {
-  if (!shippingForm.checkValidity()) {
-    displayMessage(
-      shippingStatusDiv,
-      "Bitte fülle alle erforderlichen Adressfelder aus.",
-      "error"
-    );
-    shippingForm.reportValidity();
-    return;
-  }
-  if (!selectedVariant || !selectedVariant.id || quantityInput.value < 1) {
-    displayMessage(
-      shippingStatusDiv,
-      "Fehler: Ungültige Bestelldetails.",
-      "error"
-    );
-    return;
-  }
-
-  const recipient = {
-    address1: shippingAddress1Input.value,
-    address2: shippingAddress2Input.value || undefined,
-    city: shippingCityInput.value,
-    zip: shippingZipInput.value,
-    country_code: shippingCountrySelect.value,
-  };
-  const items = [
-    {
-      catalog_variant_id: selectedVariant.id,
-      quantity: Number.parseInt(quantityInput.value, 10),
-    },
-  ];
-
-  displayMessage(shippingStatusDiv, "Suche Versandoptionen...", "info");
-  setLoadingState(getShippingButton, true);
-  shippingOptionsContainer.style.display = "block";
-  shippingOptionsListDiv.innerHTML = "";
-  tshirtPaymentContainer.style.display = "none";
-  selectedShippingOption = null;
-
-  try {
-    const response = await fetch(
-      `${CONFIG.API_BASE_URL}/printful/shipping-options`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipient, items }),
-      }
-    );
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP error! status: ${response.status}`);
-    }
-
-    shippingOptions = data.shipping_options || [];
-    if (shippingOptions.length === 0) {
-      displayMessage(
-        shippingStatusDiv,
-        "Keine Versandoptionen für diese Adresse gefunden.",
-        "info"
-      );
-      return;
-    }
-
-    // Display options
-    shippingOptions.forEach((option) => {
-      const div = document.createElement("div");
-      div.classList.add("shipping-option");
-      div.dataset.shippingId = option.id;
-      const price = (option.rate / 100).toFixed(2);
-      div.innerHTML = `<strong>${option.name}</strong> - €${price} (Lieferzeit: ${option.min_delivery_days}-${option.max_delivery_days} Tage)`;
-      shippingOptionsListDiv.appendChild(div);
-    });
-    displayMessage(
-      shippingStatusDiv,
-      "Bitte wähle eine Versandart.",
-      "success"
-    );
-  } catch (error) {
-    console.error("Error fetching shipping options:", error);
-    displayMessage(
-      shippingStatusDiv,
-      `Fehler beim Laden der Versandoptionen: ${error.message}`,
-      "error"
-    );
-    Sentry.captureException(error, {
-      tags: { context: "handleGetShippingOptions" },
-    }); // Capture handled error
-  } finally {
-    setLoadingState(getShippingButton, false);
-  }
-}
-
-async function handleShippingOptionSelection(event) {
-  try {
-    const optionId = event.target.dataset.shippingId;
-    const option = shippingOptions.find((opt) => opt.id === optionId);
-    // ... existing shipping selection logic ...
-
-    await captureAnalyticsEvent("shipping_option_selected", {
-      service_name: option.name,
-      rate: option.rate,
-    });
-
-    // Continue with shipping selection
-  } catch (error) {
-    await captureErrorEvent(error, "shipping_option_selection");
-    throw error;
-  }
-}
-
-async function initiateTshirtPayment() {
-  const placement = getPlacementData();
-  if (
-    !selectedProduct ||
-    !selectedVariant ||
-    !selectedSize ||
-    !selectedShippingOption ||
-    !selectedImageUrl ||
-    quantityInput.value < 1 ||
-    !placement
-  ) {
-    displayMessage(
-      tshirtPaymentMessage,
-      "Fehler: Checkout-Details unvollständig oder Platzierungsfehler.",
-      "error"
-    );
-    console.error("Checkout details incomplete:", {
-      selectedProduct,
-      selectedVariant,
-      selectedSize,
-      selectedShippingOption,
-      selectedImageUrl,
-      quantity: quantityInput.value,
-      placement,
-    });
-    return;
-  }
-  if (!stripe) {
-    displayMessage(
-      tshirtPaymentMessage,
-      "Stripe ist nicht initialisiert.",
-      "error"
-    );
-    return;
-  }
-
-  const orderDetails = {
-    items: [
-      {
-        catalog_variant_id: selectedVariant.id,
-        quantity: Number.parseInt(quantityInput.value, 10),
-        design_url: selectedImageUrl,
-        placement: placement, // Include calculated placement
-      },
-    ],
-    shipping_address: {
-      name: shippingNameInput.value,
-      address1: shippingAddress1Input.value,
-      address2: shippingAddress2Input.value || undefined,
-      city: shippingCityInput.value,
-      zip: shippingZipInput.value,
-      country_code: shippingCountrySelect.value,
-      email: shippingEmailInput.value,
-    },
-    shipping_option_id: selectedShippingOption.id,
-  };
-
-  displayMessage(
-    tshirtPaymentMessage,
-    "Initialisiere T-Shirt Zahlung... ",
-    "info"
-  );
-  tshirtPaymentContainer.style.display = "block";
-
-  // --- PostHog Event ---
-  if (window.posthog)
-    window.posthog.capture("payment_initiated", { purchase_type: "tshirt" });
-
-  try {
-    const response = await fetch(
-      `${CONFIG.API_BASE_URL}/stripe/create-tshirt-order-intent`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_details: orderDetails }),
-      }
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP error! status: ${response.status}`);
-    }
-
-    tshirtClientSecret = data.client_secret;
-
-    // Mount Stripe Payment Element for T-Shirt order
-    if (tshirtPaymentElement) {
-      tshirtPaymentElement.destroy();
-    }
-    const elements = stripe.elements({ clientSecret: tshirtClientSecret });
-    tshirtPaymentElement = elements.create("payment");
-    tshirtPaymentElement.mount("#tshirt-payment-element-container");
-
-    displayMessage(
-      tshirtPaymentMessage,
-      "Bitte gib deine Zahlungsdaten ein.",
-      "info"
-    );
-  } catch (error) {
-    console.error("Error initiating T-Shirt payment:", error);
-    displayMessage(tshirtPaymentMessage, `Fehler: ${error.message}`, "error");
-    Sentry.captureException(error, {
-      tags: { context: "handleTShirtOrderPayment" },
-    }); // Capture handled error
-    tshirtPaymentContainer.style.display = "none";
-  }
-}
-
-async function handleSubmitTshirtOrder() {
-  setLoadingState(submitTshirtOrderButton, true);
-  displayMessage(orderMessage, "Verarbeite Bestellung...", "info");
-
-  await captureAnalyticsEvent("order_submission_started", {
-    product_id: selectedProduct?.id,
-    variant_id: selectedVariant?.id,
-    quantity: parseInt(quantityInput.value, 10),
-  });
-
-  try {
-    // Existing order submission logic...
-
-    await captureAnalyticsEvent("order_submission_completed", {
-      success: true,
-      order_id: orderData.id,
-      product_id: selectedProduct?.id,
-      variant_id: selectedVariant?.id,
-      quantity: parseInt(quantityInput.value, 10),
-    });
-
-    displayMessage(
-      orderMessage,
-      "Bestellung erfolgreich aufgegeben!",
-      "success"
-    );
-  } catch (error) {
-    console.error("Order submission failed:", error);
-    displayMessage(
-      orderMessage,
-      "Fehler bei der Bestellung. Bitte versuchen Sie es erneut.",
-      "error"
-    );
-    await captureErrorEvent(error, "order_submission", {
-      product_id: selectedProduct?.id,
-      variant_id: selectedVariant?.id,
-    });
-  } finally {
-    setLoadingState(submitTshirtOrderButton, false);
-  }
-}
-
-function getPlacementData() {
-  // --- Phase 4.1 Implementation using fetched data ---
-
-  // CRITICAL: This function calculates the design placement for the Printful Order API.
-  // It relies on converting visual pixel measurements from the browser DOM
-  // to physical inches required by Printful.
-  // This conversion depends on ACCURATE assumptions about DPI values.
-
-  if (
-    !designImageContainer ||
-    !designImageContainer.parentElement || // This is the mockup overlay
-    !selectedImageUrl ||
-    !selectedProduct
-  ) {
-    console.error(
-      "Missing elements (designImageContainer or its parent), image URL, or selected product for placement data."
-    );
-    return null;
-  }
-
-  // --- ASSUMPTION 1: Printful Template DPI --- // IMPORTANT
-  // This is the DPI Printful uses internally for its product templates.
-  // It's needed to convert the *print area dimensions* (provided in pixels by the Catalog API)
-  // into *inches* for the Order API's 'position.area_width' and 'position.area_height'.
-  // Common print DPI is 300, but VERIFY THIS with Printful documentation if possible.
-  const ASSUMED_PRINTFUL_TEMPLATE_DPI = 300;
-
-  // --- ASSUMPTION 2: Visual Mockup DPI Conversion --- // IMPORTANT
-  // This relates the size of elements *as displayed on the user's screen* (in pixels)
-  // to the *physical size* the design should have on the final shirt (in inches).
-  // It's needed to convert the design's visual pixel dimensions/offsets (from getBoundingClientRect)
-  // into *inches* for the Order API's 'position.width', 'position.height', 'position.top', 'position.left'.
-  // This is inherently an approximation as screen DPI varies. 150 is a reasonable guess for typical screen viewing,
-  // but this might need tuning based on visual testing of the output.
-  const VISUAL_TO_INCH_DPI = 150;
-
-  // --- Get Placement Data from Selected Product ---
-  const PLACEMENT_IDENTIFIER = "front"; // Assuming "front" placement for now
-  const productPlacement = selectedProduct.placements?.find(
-    (p) => p.placement === PLACEMENT_IDENTIFIER
-  );
-
-  if (
-    !productPlacement ||
-    !productPlacement.print_area_width_px ||
-    !productPlacement.print_area_height_px
-  ) {
-    console.error(
-      `Required placement data (incl. print_area dimensions) for '${PLACEMENT_IDENTIFIER}' not found in selected product object:`,
-      selectedProduct
-    );
-    displayMessage(
-      document.getElementById("design-status"),
-      "FEHLER: Druckbereich-Daten für Produkt fehlen!",
-      "error"
-    );
-    return null; // Cannot proceed without print area dimensions
-  }
-
-  // --- CALCULATIONS ---
-
-  // 1. Print Area Dimensions in Inches (Required for Order API)
-  const area_width_inches =
-    productPlacement.print_area_width_px / ASSUMED_PRINTFUL_TEMPLATE_DPI;
-  const area_height_inches =
-    productPlacement.print_area_height_px / ASSUMED_PRINTFUL_TEMPLATE_DPI;
-
-  // 2. Design Dimensions & Position in Pixels (from visual mockup interaction)
-  const containerRect = designImageContainer.getBoundingClientRect();
-  const mockupOverlayRect =
-    designImageContainer.parentElement.getBoundingClientRect(); // Get overlay bounds
-
-  // Runtime check: Ensure the mockup overlay has dimensions
-  if (mockupOverlayRect.width === 0 || mockupOverlayRect.height === 0) {
-    console.error(
-      "Mockup overlay area has zero dimensions visually. Cannot calculate placement accurately."
-    );
-    displayMessage(
-      document.getElementById("design-status"),
-      "FEHLER: Mockup-Bereich nicht korrekt geladen.",
-      "error"
-    );
-    return null;
-  }
-
-  const pixelWidth = containerRect.width;
-  const pixelHeight = containerRect.height;
-  // Calculate position relative to the parent overlay
-  const pixelLeft = Math.max(0, containerRect.left - mockupOverlayRect.left);
-  const pixelTop = Math.max(0, containerRect.top - mockupOverlayRect.top);
-
-  // 3. Convert Design Pixels to Inches (for Order API)
-  const design_width_inches = pixelWidth / VISUAL_TO_INCH_DPI;
-  const design_height_inches = pixelHeight / VISUAL_TO_INCH_DPI;
-  const design_left_inches = pixelLeft / VISUAL_TO_INCH_DPI; // Offset from overlay top-left
-  const design_top_inches = pixelTop / VISUAL_TO_INCH_DPI; // Offset from overlay top-left
-
-  // --- CONSTRUCT API PAYLOAD ---
-  // This structure must match Printful's Order API requirements for placements->layers->position
-  const placementData = {
-    placement: PLACEMENT_IDENTIFIER,
-    layers: [
-      {
-        type: "file",
-        url: selectedImageUrl,
-        position: {
-          // Print area dimensions in INCHES
-          area_width: Number.parseFloat(area_width_inches.toFixed(4)),
-          area_height: Number.parseFloat(area_height_inches.toFixed(4)),
-
-          // Design dimensions in INCHES
-          width: Number.parseFloat(design_width_inches.toFixed(4)),
-          height: Number.parseFloat(design_height_inches.toFixed(4)),
-
-          // Design offset in INCHES from top-left of print area
-          // This assumes the visual mockup overlay *perfectly represents* the print area boundaries.
-          // If the visual overlay includes padding/margins around the actual print area,
-          // these calculations for top/left offset will be incorrect.
-          top: Number.parseFloat(design_top_inches.toFixed(4)),
-          left: Number.parseFloat(design_left_inches.toFixed(4)),
-        },
-      },
-    ],
-  };
-
-  console.log(
-    "Generated Placement Data (Verify DPI assumptions!):",
-    JSON.stringify(placementData, null, 2)
-  );
-  return placementData;
-}
-
-// --- Recovery Functions ---
-async function handleRecoveryRequest() {
-  try {
-    const email = recoveryEmailInput.value.trim();
-    if (!email) {
-      displayMessage(
-        recoveryMessage,
-        "Bitte E-Mail-Adresse eingeben.",
-        "error"
-      );
-      return;
-    }
-
-    setLoadingState(recoveryRequestButton, true);
-    displayMessage(recoveryMessage, "Suche nach Grant IDs...", "info");
-
-    await captureAnalyticsEvent("grant_id_recovery_requested", {
-      email_hash: await hashEmail(email), // Implement hashEmail function for privacy
-    });
-
-    displayMessage(
-      recoveryMessage,
-      "Wenn Grant IDs gefunden wurden, erhalten Sie eine E-Mail.",
-      "success"
-    );
-  } catch (error) {
-    console.error("Recovery request failed:", error);
-    displayMessage(
-      recoveryMessage,
-      "Fehler bei der Suche. Bitte versuchen Sie es später erneut.",
-      "error"
-    );
-    await captureErrorEvent(error, "grant_id_recovery");
-  } finally {
-    setLoadingState(recoveryRequestButton, false);
-  }
-}
-
-async function hashEmail(email) {
-  try {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(email.toLowerCase().trim());
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  } catch (error) {
-    console.error("Error hashing email:", error);
-    return "hash_error";
-  }
-}
-
-// --- Analytics Helpers (Keep Together) ---
-async function captureAnalyticsEvent(eventName, properties = {}) {
-  if (!window.posthog) {
-    console.debug("PostHog not available, skipping event capture:", eventName);
-    return;
-  }
-
-  try {
-    const hasOptedOut = await checkOptOutState();
-    if (hasOptedOut) {
-      console.debug("User opted out, skipping event capture:", eventName);
-      return;
-    }
-
-    // Add common properties
-    const enrichedProperties = {
-      ...properties,
-      app_version: "1.0.0",
-      environment: APP_ENV,
-      timestamp: new Date().toISOString(),
-    };
-
-    window.posthog.capture(eventName, enrichedProperties);
-  } catch (error) {
-    console.warn("Failed to capture analytics event:", eventName, error);
-    // Report to Sentry if available
-    if (Sentry) {
-      Sentry.captureException(error);
-    }
-  }
-}
-
-async function captureErrorEvent(error, context, additionalProperties = {}) {
-  const errorProperties = {
-    error_type: error.type || error.name || "unknown",
-    error_message: error.message,
-    error_context: context,
-    error_timestamp: new Date().toISOString(),
-    ...additionalProperties,
-  };
-
-  await captureAnalyticsEvent("error_occurred", errorProperties);
-}
-
-function trackPageView(section) {
-  captureAnalyticsEvent("page_view", {
-    section: section,
-    timestamp: new Date().toISOString(),
-    referrer: document.referrer,
-  });
-}
-
-function handleDesignCustomization(type, properties = {}) {
-  const now = Date.now();
-  if (now - lastCustomizationEvent < CUSTOMIZATION_THROTTLE) return;
-
-  lastCustomizationEvent = now;
-  captureAnalyticsEvent("design_customized", {
-    customization_type: type,
-    ...properties,
-  });
-}
-
-// --- General Helpers (Keep Together) ---
-function displayMessage(element, message, type = "info") {
-  if (!element) return;
-  // Clear previous types
-  element.classList.remove("error", "success", "info");
-
-  if (message) {
-    element.textContent = message;
-    element.classList.add(type); // Add the type class (error, success, info)
-    element.style.display = "block";
-  } else {
-    element.textContent = "";
-    element.style.display = "none";
-  }
-}
-
-function setLoadingState(button, isLoading) {
-  if (!button) return;
-  if (isLoading) {
-    // Store original text if not already stored
-    if (!button.dataset.originalText) {
-      button.dataset.originalText = button.textContent;
-    }
-    button.disabled = true;
-    // Add spinner or change text (basic text change for now)
-    button.textContent = "Verarbeite...";
-    button.classList.add("loading"); // Add class for potential spinner styling
-  } else {
-    button.disabled = false;
-    // Restore original text
-    button.textContent = button.dataset.originalText || "Aktion Ausführen";
-    // Clear original text storage
-    delete button.dataset.originalText;
-    button.classList.remove("loading");
-  }
-}
-
-function getRetryDelay(retryCount) {
-  const delay = Math.min(
-    RETRY_CONFIG.INITIAL_DELAY *
-      Math.pow(RETRY_CONFIG.BACKOFF_FACTOR, retryCount),
-    RETRY_CONFIG.MAX_DELAY
-  );
-  return delay + Math.random() * 1000; // Add jitter
-}
-
-// --- Function Definitions Moved Before DOMContentLoaded ---
-
-function loadGrantId() {
-  currentGrantId = getTokenGrantId();
-  console.log("Loaded Grant ID:", currentGrantId);
-}
-
-async function updateTokenBalanceDisplay() {
-  const balanceDisplay = document.getElementById("token-balance-display");
-  if (!balanceDisplay) return 0;
-  const grantId = getTokenGrantId();
-
-  if (!grantId) {
-    balanceDisplay.textContent = "Tokens: 0";
-    if (aiGenerateButton) aiGenerateButton.disabled = true;
-    return 0;
-  }
-
-  balanceDisplay.textContent = "Tokens: Lade..."; // Show loading state
-  try {
-    const data = await makeApiCall(
-      `${CONFIG.API_BASE_URL}/get-token-balance?grant_id=${encodeURIComponent(
-        grantId
-      )}`,
-      {
-        method: "GET",
-      },
-      (response) => typeof response.tokens_remaining === "number"
-    );
-    const balance = data.tokens_remaining;
-    balanceDisplay.textContent = `Tokens: ${balance}`;
-    if (aiGenerateButton) {
-      aiGenerateButton.disabled = balance <= 0;
-      aiGenerateButton.textContent = `Generieren (${
-        balance > 0 ? "1 Token" : "0 Tokens"
-      })`;
-    }
-    return balance;
-  } catch (error) {
-    console.error("Failed to fetch token balance:", error);
-    balanceDisplay.textContent = "Tokens: Fehler";
-    if (aiGenerateButton) aiGenerateButton.disabled = true;
-    // Don't capture error here, makeApiCall likely did
-    return 0;
-  }
-}
-
-async function fetchAndDisplayProducts() {
-  const productListDiv = document.getElementById("product-list");
-  if (!productListDiv) return;
-
-  productListDiv.innerHTML = "<p>Lade Produkte...</p>";
-  try {
-    const data = await makeApiCall(`${CONFIG.API_BASE_URL}/printful/products`, {
-      method: "GET",
-    });
-    availableProducts = data.products || []; // Store fetched products globally
-    displayProducts(availableProducts); // Call display function
-    // console.log("Fetched Products:", availableProducts);
-
-    // After fetching products, try restoring state IF products were fetched
-    if (availableProducts.length > 0) {
-      console.log("Products loaded, attempting state restoration...");
-      restoreDesignState(); // Attempt restoration now that products are available
-    }
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    productListDiv.innerHTML =
-      "<p>Fehler beim Laden der Produkte. Bitte versuchen Sie es später erneut.</p>";
-    captureErrorEvent(error, "product_fetch");
-  }
-}
+  recoveryMessageDiv,
+  designImageContainer,
+  imageScaleSlider,
+  rotateLeftButton,
+  rotateRightButton,
+  resetPositionButton,
+  printableAreaGuide,
+  togglePrintAreaButton;
 
 // --- Initialization (Keep at the end) ---
 document.addEventListener("DOMContentLoaded", async () => {
-  // Select DOM Elements
-  tokenBalanceDisplay = document.getElementById("token-balance-display");
-  imageUploadInput = document.getElementById("image-upload-input");
-  imageUploadButton = document.getElementById("image-upload-button");
-  imageUploadResult = document.getElementById("image-upload-result");
-  uploadStatus = document.getElementById("upload-status");
-  imagePreviewUpload = document.getElementById("image-preview-upload");
-  emailInput = document.getElementById("email-input");
-  buyTokensButton = document.getElementById("buy-tokens-button");
-  paymentElementContainer = document.getElementById(
-    "payment-element-container"
-  );
-  submitPaymentButton = document.getElementById("submit-payment-button");
-  paymentMessage = document.getElementById("payment-message");
-  grantIdDisplay = document.getElementById("grant-id-display");
-  aiPromptInput = document.getElementById("ai-prompt-input");
-  aiGenerateButton = document.getElementById("ai-generate-button");
-  aiStatus = document.getElementById("ai-status");
-  aiResultsGrid = document.getElementById("ai-results-grid");
-  imagePreviewAi = document.getElementById("image-preview-ai");
-  productListDiv = document.getElementById("product-list");
-  colorSwatchesDiv = document.getElementById("color-swatches");
-  mockupImageOverlay = document.getElementById("design-image-overlay");
-  tabButtons = document.querySelectorAll(".tab-button");
-  tabContents = document.querySelectorAll(".tab-content");
-  sizeSelectorDiv = document.getElementById("size-selector");
-  quantityInput = document.getElementById("quantity-input");
-  proceedToCheckoutButton = document.getElementById(
-    "proceed-to-checkout-button"
-  );
-  checkoutSection = document.getElementById("checkout-section");
-  orderSummaryDiv = document.getElementById("order-summary");
-  shippingForm = document.getElementById("shipping-form");
-  shippingNameInput = document.getElementById("shipping-name");
-  shippingAddress1Input = document.getElementById("shipping-address1");
-  shippingAddress2Input = document.getElementById("shipping-address2");
-  shippingCityInput = document.getElementById("shipping-city");
-  shippingZipInput = document.getElementById("shipping-zip");
-  shippingCountrySelect = document.getElementById("shipping-country");
-  shippingEmailInput = document.getElementById("shipping-email");
-  getShippingButton = document.getElementById("get-shipping-button");
-  shippingOptionsContainer = document.getElementById(
-    "shipping-options-container"
-  );
-  shippingOptionsListDiv = document.getElementById("shipping-options-list");
-  shippingStatusDiv = document.getElementById("shipping-status");
-  tshirtPaymentContainer = document.getElementById("tshirt-payment-container");
-  tshirtPaymentElementContainer = document.getElementById(
-    "tshirt-payment-element-container"
-  );
-  submitTshirtOrderButton = document.getElementById(
-    "submit-tshirt-order-button"
-  );
-  tshirtPaymentMessage = document.getElementById("tshirt-payment-message");
-  recoverySection = document.getElementById("recovery-section");
-  recoveryEmailInput = document.getElementById("recovery-email-input");
-  recoveryRequestButton = document.getElementById("recovery-request-button");
-  recoveryMessageDiv = document.getElementById("recovery-message");
-  designImageContainer = document.getElementById("design-image-container");
-  imageScaleSlider = document.getElementById("image-scale-slider");
-  navButtons = document.querySelectorAll(".nav-button");
-  posthogOptOutToggle = document.getElementById("posthog-opt-out-toggle");
-
-  // Initialize Stripe (add null check)
-  if (
-    CONFIG.STRIPE_PUBLISHABLE_KEY &&
-    CONFIG.STRIPE_PUBLISHABLE_KEY !== "pk_test_placeholder"
-  ) {
-    try {
-      stripe = await loadStripe(CONFIG.STRIPE_PUBLISHABLE_KEY);
-      if (!stripe) {
-        throw new AppError(
-          ErrorTypes.INITIALIZATION,
-          "Stripe failed to initialize after load"
-        );
+  // Initialize analytics
+  initAnalytics();
+  trackPageView();
+  trackPageView();
+  // Recovery Flow: Grant ID recovery
+  if (recoveryRequestButton && recoveryEmailInput && recoveryMessageDiv) {
+    recoveryRequestButton.addEventListener('click', async () => {
+      const email = recoveryEmailInput.value.trim();
+      if (!email) {
+        displayMessage(recoveryMessageDiv, 'Bitte eine gültige Email eingeben.', 'error');
+        return;
       }
-      console.log("Stripe initialized successfully");
-    } catch (error) {
-      console.error("Failed to initialize Stripe:", error);
-      // Only display message if the payment message element exists
-      const paymentMsgEl = document.getElementById("payment-message");
-      if (paymentMsgEl) {
+      // Analytics: grant ID recovery requested
+      let emailHash;
+      try {
+        emailHash = await hashEmail(email);
+      } catch {
+        emailHash = null;
+      }
+      trackEvent('grant_id_recovery_requested', { email_hash: emailHash });
+      setLoadingState(recoveryRequestButton, true);
+      try {
+        await recoverGrantId(email);
         displayMessage(
-          paymentMsgEl,
-          "Stripe konnte nicht initialisiert werden. Zahlung nicht möglich.",
-          "error"
+          recoveryMessageDiv,
+          'Falls ein Kauf gefunden wurde, erhalten Sie eine Email mit Ihrer Grant ID.',
+          'success'
         );
+        // Analytics: grant ID recovery completed
+        trackEvent('grant_id_recovered', { email_hash: emailHash });
+      } catch (error) {
+        console.error('Grant ID Recovery Error:', error);
+        displayMessage(
+          recoveryMessageDiv,
+          'Fehler beim Anfordern der Wiederherstellung.',
+          'error'
+        );
+      } finally {
+        setLoadingState(recoveryRequestButton, false);
       }
-      if (Sentry) {
-        Sentry.captureException(error);
-      }
-      await captureErrorEvent(error, "stripe_initialization", {
-        stripe_key_configured: !!CONFIG.STRIPE_PUBLISHABLE_KEY,
+    });
+  }
+  
+  // --- Phase 1: Select ALL DOM Elements FIRST (with Granular Logging) ---
+  console.log(
+    "DOMContentLoaded: Selecting elements (Restored Selection Block)..."
+  );
+  try {
+    // Select sizeSelectorDiv FIRST (as per previous test)
+    console.log("Selecting: sizeSelectorDiv...");
+    sizeSelectorDiv = document.getElementById("size-selector");
+    console.log(`Selected sizeSelectorDiv: ${!!sizeSelectorDiv}`);
+
+    // Select other elements
+    tokenBalanceDisplay = document.getElementById("token-balance-display");
+    console.log(`Selected tokenBalanceDisplay: ${!!tokenBalanceDisplay}`);
+    imageUploadInput = document.getElementById("image-upload-input");
+    console.log(`Selected imageUploadInput: ${!!imageUploadInput}`);
+    imageUploadButton = document.getElementById("image-upload-button");
+    console.log(`Selected imageUploadButton: ${!!imageUploadButton}`);
+    productListDiv = document.getElementById("product-list");
+    console.log(`Selected productListDiv: ${!!productListDiv}`);
+    colorSwatchesDiv = document.getElementById("color-swatches");
+    console.log(`Selected colorSwatchesDiv: ${!!colorSwatchesDiv}`);
+    mockupImageOverlay = document.getElementById("design-image-container");
+    console.log(`Selected mockupImageOverlay: ${!!mockupImageOverlay}`); // Corrected ID
+    tabButtons = document.querySelectorAll(".tab-button");
+    console.log(
+      `Selected tabButtons: ${!!tabButtons} (Count: ${tabButtons?.length})`
+    );
+    tabContents = document.querySelectorAll(".tab-content");
+    console.log(
+      `Selected tabContents: ${!!tabContents} (Count: ${tabContents?.length})`
+    );
+    quantityInput = document.getElementById("quantity-input");
+    console.log(`Selected quantityInput: ${!!quantityInput}`);
+    proceedToCheckoutButton = document.getElementById(
+      "proceed-to-checkout-button"
+    );
+    console.log(
+      `Selected proceedToCheckoutButton: ${!!proceedToCheckoutButton}`
+    );
+    checkoutSection = document.getElementById("checkout-section");
+    console.log(`Selected checkoutSection: ${!!checkoutSection}`);
+    navButtons = document.querySelectorAll(".nav-button");
+    console.log(
+      `Selected navButtons: ${!!navButtons} (Count: ${navButtons?.length})`
+    );
+    posthogOptOutToggle = document.getElementById("posthog-opt-out-toggle");
+    console.log(`Selected posthogOptOutToggle: ${!!posthogOptOutToggle}`);
+    if (posthogOptOutToggle) {
+      posthogOptOutToggle.addEventListener("change", () => {
+        if (posthogOptOutToggle.checked) {
+          optOutAnalytics();
+          trackEvent('opt_out_analytics');
+        } else {
+          optInAnalytics();
+          trackEvent('opt_in_analytics');
+        }
       });
     }
-  } else {
-    console.warn(
-      "Stripe publishable key not configured. Stripe features disabled."
+    imageUploadResult = document.getElementById("image-upload-result");
+    console.log(`Selected imageUploadResult: ${!!imageUploadResult}`);
+    uploadStatus = document.getElementById("upload-status");
+    console.log(`Selected uploadStatus: ${!!uploadStatus}`);
+    imagePreviewUpload = document.getElementById("image-preview-upload");
+    console.log(`Selected imagePreviewUpload: ${!!imagePreviewUpload}`);
+    emailInput = document.getElementById("email-input");
+    console.log(`Selected emailInput: ${!!emailInput}`);
+    buyTokensButton = document.getElementById("buy-tokens-button");
+    console.log(`Selected buyTokensButton: ${!!buyTokensButton}`);
+    paymentElementContainer = document.getElementById(
+      "payment-element-container"
+    );
+    console.log(
+      `Selected paymentElementContainer: ${!!paymentElementContainer}`
+    );
+    submitPaymentButton = document.getElementById("submit-payment-button");
+    console.log(`Selected submitPaymentButton: ${!!submitPaymentButton}`);
+    paymentMessage = document.getElementById("payment-message");
+    console.log(`Selected paymentMessage: ${!!paymentMessage}`);
+    grantIdDisplay = document.getElementById("grant-id-display");
+    console.log(`Selected grantIdDisplay: ${!!grantIdDisplay}`);
+    aiPromptInput = document.getElementById("ai-prompt-input");
+    console.log(`Selected aiPromptInput: ${!!aiPromptInput}`);
+    aiGenerateButton = document.getElementById("ai-generate-button");
+    console.log(`Selected aiGenerateButton: ${!!aiGenerateButton}`);
+    aiStatus = document.getElementById("ai-status");
+    console.log(`Selected aiStatus: ${!!aiStatus}`);
+    aiResultsGrid = document.getElementById("ai-results-grid");
+    console.log(`Selected aiResultsGrid: ${!!aiResultsGrid}`);
+    imagePreviewAi = document.getElementById("image-preview-ai");
+    console.log(`Selected imagePreviewAi: ${!!imagePreviewAi}`);
+    orderSummaryDiv = document.getElementById("order-summary");
+    console.log(`Selected orderSummaryDiv: ${!!orderSummaryDiv}`);
+    shippingForm = document.getElementById("shipping-form");
+    console.log(`Selected shippingForm: ${!!shippingForm}`);
+    shippingNameInput = document.getElementById("shipping-name");
+    console.log(`Selected shippingNameInput: ${!!shippingNameInput}`);
+    shippingAddress1Input = document.getElementById("shipping-address1");
+    console.log(`Selected shippingAddress1Input: ${!!shippingAddress1Input}`);
+    shippingAddress2Input = document.getElementById("shipping-address2");
+    console.log(`Selected shippingAddress2Input: ${!!shippingAddress2Input}`);
+    shippingCityInput = document.getElementById("shipping-city");
+    console.log(`Selected shippingCityInput: ${!!shippingCityInput}`);
+    shippingZipInput = document.getElementById("shipping-zip");
+    console.log(`Selected shippingZipInput: ${!!shippingZipInput}`);
+    shippingCountrySelect = document.getElementById("shipping-country");
+    console.log(`Selected shippingCountrySelect: ${!!shippingCountrySelect}`);
+    shippingEmailInput = document.getElementById("shipping-email");
+    console.log(`Selected shippingEmailInput: ${!!shippingEmailInput}`);
+    getShippingButton = document.getElementById("get-shipping-button");
+    console.log(`Selected getShippingButton: ${!!getShippingButton}`);
+    shippingOptionsContainer = document.getElementById(
+      "shipping-options-container"
+    );
+    console.log(
+      `Selected shippingOptionsContainer: ${!!shippingOptionsContainer}`
+    );
+    shippingOptionsListDiv = document.getElementById("shipping-options-list");
+    console.log(`Selected shippingOptionsListDiv: ${!!shippingOptionsListDiv}`);
+    shippingStatusDiv = document.getElementById("shipping-status");
+    console.log(`Selected shippingStatusDiv: ${!!shippingStatusDiv}`);
+    tshirtPaymentContainer = document.getElementById(
+      "tshirt-payment-container"
+    );
+    console.log(`Selected tshirtPaymentContainer: ${!!tshirtPaymentContainer}`);
+    tshirtPaymentElementContainer = document.getElementById(
+      "tshirt-payment-element-container"
+    );
+    console.log(
+      `Selected tshirtPaymentElementContainer: ${!!tshirtPaymentElementContainer}`
+    );
+    submitTshirtOrderButton = document.getElementById(
+      "submit-tshirt-order-button"
+    );
+    console.log(
+      `Selected submitTshirtOrderButton: ${!!submitTshirtOrderButton}`
+    );
+    tshirtPaymentMessage = document.getElementById("tshirt-payment-message");
+    console.log(`Selected tshirtPaymentMessage: ${!!tshirtPaymentMessage}`);
+    recoverySection = document.getElementById("recovery-section");
+    console.log(`Selected recoverySection: ${!!recoverySection}`);
+    recoveryEmailInput = document.getElementById("recovery-email-input");
+    console.log(`Selected recoveryEmailInput: ${!!recoveryEmailInput}`);
+    recoveryRequestButton = document.getElementById("recovery-request-button");
+    console.log(`Selected recoveryRequestButton: ${!!recoveryRequestButton}`);
+    recoveryMessageDiv = document.getElementById("recovery-message");
+    console.log(`Selected recoveryMessageDiv: ${!!recoveryMessageDiv}`);
+    designImageContainer = document.getElementById("design-image-container");
+    console.log(`Selected designImageContainer: ${!!designImageContainer}`); // Also select this explicitly
+    imageScaleSlider = document.getElementById("image-scale-slider");
+    console.log(`Selected imageScaleSlider: ${!!imageScaleSlider}`);
+    // Design control buttons
+    rotateLeftButton = document.getElementById("rotate-left");
+    console.log(`Selected rotateLeftButton: ${!!rotateLeftButton}`);
+    rotateRightButton = document.getElementById("rotate-right");
+    console.log(`Selected rotateRightButton: ${!!rotateRightButton}`);
+    resetPositionButton = document.getElementById("reset-position");
+    console.log(`Selected resetPositionButton: ${!!resetPositionButton}`);
+    printableAreaGuide = document.querySelector(".print-area-guide");
+    console.log(`Selected printableAreaGuide: ${!!printableAreaGuide}`);
+    togglePrintAreaButton = document.getElementById("toggle-printable-area");
+    console.log(`Selected togglePrintAreaButton: ${!!togglePrintAreaButton}`);
+
+    console.log(
+      "DOMContentLoaded: Element selection complete (Restored Selection Block)."
+    );
+  } catch (error) {
+    console.error(
+      "CRITICAL Error during element selection (Restored Selection Block):",
+      error
     );
   }
-
-  // Initialize PostHog opt-out state (add null check for toggle)
-  if (posthogOptOutToggle) {
-    if (window.posthog && CONFIG.POSTHOG.API_KEY) {
-      // Add check for API Key here too
-      try {
-        const hasOptedOut = await checkOptOutState();
-        posthogOptOutToggle.checked = hasOptedOut;
-        posthogOptOutToggle.addEventListener(
-          "change",
-          handlePostHogOptOutToggle
-        );
-      } catch (err) {
-        console.error("Error initializing PostHog opt-out state:", err);
-      }
-    } else {
-      console.warn(
-        "PostHog not available or not configured. Analytics disabled."
-      );
-      posthogOptOutToggle.disabled = true;
+  // Helper to enable/disable Proceed to Checkout button based on design completeness
+  function updateProceedToCheckout() {
+    if (!proceedToCheckoutButton) return;
+    const hasVariant = !!getSelectedVariant();
+    const imgUrl = getSelectedImageUrl();
+    const qty = getQuantity();
+    proceedToCheckoutButton.disabled = !(hasVariant && imgUrl && qty > 0);
+  }
+  // Initialize Token Grant ID & Balance
+  tokenGrantId = getTokenGrantId();
+  // Disable AI generation if no grant ID
+  if (!tokenGrantId && aiGenerateButton) {
+    aiGenerateButton.disabled = true;
+  }
+  if (tokenGrantId && tokenBalanceDisplay) {
+    try {
+      const balanceRes = await apiGetTokenBalance(tokenGrantId);
+      const bal = balanceRes?.tokens_remaining ?? 0;
+      setTokenBalance(bal);
+      updateTokenBalanceDisplay(bal, tokenBalanceDisplay);
+      // Analytics: token balance checked
+      trackEvent('token_balance_checked', { tokens_remaining: bal });
+      // Enable/disable AI generate button based on balance
+      if (aiGenerateButton) aiGenerateButton.disabled = bal < 1;
+    } catch (error) {
+      console.error("Token Balance Fetch Error:", error);
     }
-  } else {
-    console.warn("PostHog opt-out toggle element not found.");
   }
-
-  // --- Add Event Listeners (with null checks) ---
-  // Null checks added/verified for all event listeners attached here
-
-  if (imageUploadInput) {
-    imageUploadInput.addEventListener("change", handleImageUpload);
-  } else {
-    console.warn("#image-upload-input not found");
-  }
-
-  if (imageUploadButton) {
-    imageUploadButton.dataset.originalText = "Für Design Verwenden";
-    imageUploadButton.textContent = "Für Design Verwenden";
-    if (typeof handleUseUploadedImage === "function") {
-      imageUploadButton.addEventListener("click", handleUseUploadedImage);
-    } else {
-      console.error("handleUseUploadedImage function is not defined!");
+  // Restore design state if present
+  if (restoreStateFromSession() && getSelectedProduct()) {
+    const product = getSelectedProduct();
+    clearColorSwatches(colorSwatchesDiv);
+    displayColorSwatches(product.available_colors, colorSwatchesDiv);
+    const colorName = getSelectedColorName();
+    if (colorName) {
+      const variants = product.variants.filter((v) => v.color === colorName && v.in_stock);
+      clearSizes(sizeSelectorDiv);
+      displaySizes(variants, sizeSelectorDiv);
     }
-  } else {
-    console.warn("#image-upload-button not found.");
+    quantityInput.value = getQuantity();
+    const imageUrl = getSelectedImageUrl();
+    if (imageUrl) {
+      loadDesignImage(designImageContainer, imageUrl);
+      // Enable proceed button
+      updateProceedToCheckout();
+    }
   }
 
-  if (buyTokensButton) {
-    // ADDED NULL CHECK
-    buyTokensButton.addEventListener("click", async (e) => {
-      e.preventDefault();
-      await initiateTokenPurchase();
-    });
-  } else {
-    console.warn("#buy-tokens-button not found"); // ADDED Warning
-  }
-
-  if (submitPaymentButton) {
-    submitPaymentButton.addEventListener("click", async (e) => {
-      e.preventDefault();
-      await handlePaymentSubmit();
-    });
-  } else {
-    console.warn("#submit-payment-button not found");
-  }
-
-  if (aiGenerateButton) {
-    aiGenerateButton.addEventListener("click", handleGenerateImage);
-  } else {
-    console.warn("#ai-generate-button not found");
-  }
-
-  if (aiResultsGrid) {
-    aiResultsGrid.addEventListener("click", handleAiImageSelection);
-  } else {
-    console.warn("#ai-results-grid not found");
-  }
-
+  // Initial product loading flow
   if (productListDiv) {
-    productListDiv.addEventListener("click", handleProductSelection);
-  } else {
-    console.warn("#product-list not found");
-  }
+    showProductListLoading(productListDiv);
+    try {
+      const result = await fetchProducts();
+      const products = result?.products || [];
+      setAvailableProducts(products);
+      displayProducts(products, productListDiv);
+    } catch (error) {
+      displayMessage(
+        productListDiv,
+        "Fehler beim Laden der Produkte.",
+        "error"
+      );
+    }
 
-  if (colorSwatchesDiv) {
-    colorSwatchesDiv.addEventListener("click", handleColorSelection);
-  } else {
-    console.warn("#color-swatches not found");
-  }
-
-  if (tabButtons && tabContents) {
-    tabButtons.forEach((button) => {
-      button.addEventListener("click", () => switchTab(button.dataset.tab));
-    });
-  } else {
-    console.warn("Tab buttons or contents not found");
-  }
-
-  if (sizeSelectorDiv) {
-    sizeSelectorDiv.addEventListener("click", handleSizeSelection);
-  } else {
-    console.warn("#size-selector not found");
-  }
-
-  if (quantityInput) {
-    quantityInput.addEventListener("change", handleQuantityChange);
-  } else {
-    console.warn("#quantity-input not found");
-  }
-
-  if (proceedToCheckoutButton) {
-    proceedToCheckoutButton.addEventListener("click", handleProceedToCheckout);
-  } else {
-    console.warn("#proceed-to-checkout-button not found");
-  }
-
-  if (getShippingButton) {
-    getShippingButton.addEventListener("click", handleGetShippingOptions);
-  } else {
-    console.warn("#get-shipping-button not found");
-  }
-
-  if (shippingOptionsListDiv) {
-    shippingOptionsListDiv.addEventListener(
-      "click",
-      handleShippingOptionSelection
-    );
-  } else {
-    console.warn("#shipping-options-list not found");
-  }
-
-  if (submitTshirtOrderButton) {
-    submitTshirtOrderButton.addEventListener("click", handleSubmitTshirtOrder);
-  } else {
-    console.warn("#submit-tshirt-order-button not found");
-  }
-
-  if (recoveryRequestButton) {
-    recoveryRequestButton.addEventListener("click", handleRecoveryRequest);
-  } else {
-    console.warn("#recovery-request-button not found");
-  }
-
-  if (designImageContainer) {
-    designImageContainer.addEventListener("mousedown", handleMouseDown);
-  } else {
-    console.warn("#design-image-container not found");
-  }
-
-  // Add global mouse move/up listeners for dragging/resizing
-  document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mouseup", handleMouseUp);
-
-  if (imageScaleSlider) {
-    imageScaleSlider.addEventListener("input", handleScaleSliderChange);
-  } else {
-    console.warn("#image-scale-slider not found");
-  }
-
-  if (navButtons) {
-    navButtons.forEach((button) => {
-      button.addEventListener("click", (e) => {
-        const sectionId = e.target.getAttribute("data-section");
-        if (sectionId) {
-          showSection(sectionId);
+    // --- Phase 4: UI Event Listeners ---
+    // Navigation between main sections
+    navButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        navButtons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const target = btn.dataset.target;
+        showSection(target);
+        // Analytics: navigation
+        trackEvent('navigation', { target });
+        if (target === 'checkout-section') {
+          trackEvent('checkout_started');
         }
       });
     });
-  } else {
-    console.warn(".nav-button elements not found");
+
+    // Tab switching between Upload and AI in design step
+    tabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabButtons.forEach((b) =>
+          b.classList.toggle("active", b === btn)
+        );
+        tabContents.forEach((c) =>
+          c.classList.toggle(
+            "active",
+            c.id === btn.dataset.target
+          )
+        );
+      });
+    });
+
+    // Product selection
+    productListDiv.addEventListener("click", (e) => {
+      const item = e.target.closest(".product-item");
+      if (!item) return;
+      const productId = item.dataset.productId;
+      const product = getAvailableProducts().find(
+        (p) => p.id == productId
+      );
+      if (product) {
+        setSelectedProduct(product);
+        clearColorSwatches(colorSwatchesDiv);
+        clearSizes(sizeSelectorDiv);
+        displayColorSwatches(
+          product.available_colors,
+          colorSwatchesDiv
+        );
+      }
+    });
+
+    // Color selection
+    colorSwatchesDiv.addEventListener("click", (e) => {
+      const swatch = e.target.closest(".color-swatch");
+      if (!swatch) return;
+      const colorName = swatch.dataset.colorName;
+      const colorCode = swatch.dataset.colorCode;
+      setSelectedColor(colorName, colorCode);
+      // Analytics: T-shirt color selected
+      const selectedProd = getSelectedProduct();
+      trackEvent('tshirt_color_selected', { product_id: selectedProd?.id, color: colorName });
+      const variants = getSelectedProduct()?.variants || [];
+      const availableVariants = variants.filter(
+        (v) => v.color === colorName && v.in_stock
+      );
+      clearSizes(sizeSelectorDiv);
+      displaySizes(availableVariants, sizeSelectorDiv);
+    });
+
+    // Size selection
+    sizeSelectorDiv.addEventListener("click", (e) => {
+      const btn = e.target.closest(".size-option");
+      if (!btn) return;
+      const size = btn.dataset.size;
+      setSelectedSize(size);
+      // Analytics: T-shirt size selected
+      const selectedProd = getSelectedProduct();
+      trackEvent('tshirt_size_selected', { product_id: selectedProd?.id, size });
+      // Update proceed button
+      updateProceedToCheckout();
+    });
+
+    // Design finalized: proceed to checkout
+    if (proceedToCheckoutButton) {
+      proceedToCheckoutButton.addEventListener("click", () => {
+        const prod = getSelectedProduct();
+        trackEvent('design_finalized', {
+          product_id: prod?.id,
+          color: getSelectedColorName(),
+          size: getSelectedSize(),
+          quantity: getQuantity(),
+        });
+        // Analytics: checkout started after design
+        trackEvent('checkout_started');
+        showSection('checkout-section');
+      });
+    }
+
+    // Quantity change
+    quantityInput.addEventListener("change", (e) => {
+      setQuantity(e.target.value);
+      // Update proceed button
+      updateProceedToCheckout();
+      // Analytics: quantity changed
+      trackEvent('design_quantity_changed', { quantity: getQuantity() });
+    });
+    // Image Upload Flow
+    if (imageUploadButton && imageUploadInput) {
+      imageUploadButton.addEventListener("click", async () => {
+        const file = imageUploadInput.files?.[0];
+        if (!file) {
+          displayMessage(uploadStatus, "Bitte ein Bild auswählen.", "error");
+          return;
+        }
+        // Client-side file type validation
+        const validTypes = ['image/png', 'image/jpeg'];
+        if (!validTypes.includes(file.type)) {
+          displayMessage(uploadStatus, "Nur PNG und JPEG Dateitypen erlaubt.", "error");
+          return;
+        }
+        setLoadingState(imageUploadButton, true);
+        const formData = new FormData();
+        formData.append("image", file);
+        try {
+          const res = await uploadImage(formData);
+          const imageUrl = res?.imageUrl;
+          if (imageUrl) {
+            // Analytics: Image uploaded
+            trackEvent('image_uploaded', { file_type: file.type, file_size: file.size });
+            setSelectedImageUrl(imageUrl);
+            loadDesignImage(designImageContainer, imageUrl);
+            // Enable proceed button
+            updateProceedToCheckout();
+          } else {
+            throw new Error("No imageUrl in response");
+          }
+        } catch (error) {
+          console.error("Upload Error:", error);
+          displayMessage(uploadStatus, "Upload fehlgeschlagen.", "error");
+        } finally {
+          setLoadingState(imageUploadButton, false);
+        }
+      });
+    }
+
+    // AI Image Generation Flow
+    if (aiGenerateButton && aiPromptInput) {
+      aiGenerateButton.addEventListener("click", async () => {
+        const prompt = aiPromptInput.value.trim();
+        if (!prompt) {
+          displayMessage(aiStatus, "Bitte Prompt eingeben.", "error");
+          return;
+        }
+        const grantId = getTokenGrantId();
+        if (!grantId) {
+          displayMessage(aiStatus, "Keine Grant ID gefunden.", "error");
+          return;
+        }
+        // Analytics: AI prompt submitted
+        trackEvent('ai_prompt_submitted', { prompt });
+        setLoadingState(aiGenerateButton, true);
+        clearAiResults(aiResultsGrid);
+        displayMessage(aiStatus, "", "info");
+        try {
+          const result = await generateImage(prompt, grantId);
+          const images = result?.images || [];
+          const revised = result?.revised_prompt;
+          // Analytics: AI images generated
+          trackEvent('ai_image_generated', {
+            prompt,
+            revised_prompt: revised,
+            num_images_returned: images.length,
+          });
+          displayAiResults(images, aiResultsGrid);
+          // Update token balance after generation
+          const balRes = await apiGetTokenBalance(grantId);
+          const bal = balRes?.tokens_remaining ?? 0;
+          setTokenBalance(bal);
+          updateTokenBalanceDisplay(bal, tokenBalanceDisplay);
+        } catch (error) {
+          console.error("AI Generation Error:", error);
+          displayMessage(aiStatus, "AI Generierung fehlgeschlagen.", "error");
+        } finally {
+          setLoadingState(aiGenerateButton, false);
+        }
+      });
+    }
+
+    // AI Result Selection
+    if (aiResultsGrid) {
+      aiResultsGrid.addEventListener("click", (e) => {
+        const item = e.target.closest(".ai-result-item");
+        if (!item) return;
+        const url = item.dataset.imageUrl;
+        // Analytics: AI image selected
+        trackEvent('ai_image_selected', { image_url: url });
+        setSelectedImageUrl(url);
+        loadDesignImage(designImageContainer, url);
+        clearAiResults(aiResultsGrid);
+        // Enable proceed button
+        updateProceedToCheckout();
+      });
+    }
+
+    // Initialize design canvas controls
+    initializeDesignControls({
+      designContainer: designImageContainer,
+      scaleSlider: imageScaleSlider,
+      rotateLeftButton,
+      rotateRightButton,
+      resetPositionButton,
+      printAreaGuide: printableAreaGuide,
+      togglePrintAreaButton,
+    });
   }
 
-  // --- Initial Setup Calls ---
-  loadGrantId(); // Now defined above
-  await updateTokenBalanceDisplay(); // Now defined above
-  await fetchAndDisplayProducts(); // Now defined above
-  // Display initial section (e.g., design)
-  showSection("design-section");
+  // --- Token Purchase Flow ---
+  if (buyTokensButton && emailInput && paymentElementContainer && submitPaymentButton) {
+    buyTokensButton.addEventListener("click", async () => {
+      const email = emailInput.value.trim();
+      if (!email) {
+        displayMessage(paymentMessage, "Bitte eine gültige Email eingeben.", "error");
+        return;
+      }
+      // Analytics: Token purchase initiated
+      trackEvent('token_purchase_initiated', { bundle_id: CONFIG.TOKENS.BUNDLE_ID });
+      setLoadingState(buyTokensButton, true);
+      try {
+        const res = await purchaseTokens(CONFIG.TOKENS.BUNDLE_ID, email);
+        clientSecret = res.client_secret;
+        tokenGrantId = res.grant_id;
+        saveTokenGrantId(tokenGrantId);
+        // Initialize Stripe Elements for payment
+        stripe = Stripe(CONFIG.STRIPE_PUBLISHABLE_KEY);
+        elements = stripe.elements();
+        tokenCardElement = elements.create("card");
+        paymentElementContainer.style.display = "block";
+        tokenCardElement.mount("#payment-element-container");
+        submitPaymentButton.style.display = "block";
+        buyTokensButton.style.display = "none";
+        emailInput.disabled = true;
+        displayMessage(paymentMessage, "Bitte Zahlungsdaten eingeben.", "info");
+      } catch (error) {
+        console.error("Token Purchase Init Error:", error);
+        displayMessage(paymentMessage, "Token-Kauf fehlgeschlagen.", "error");
+        setLoadingState(buyTokensButton, false);
+      }
+    });
+    // Confirm Token Purchase Payment
+    submitPaymentButton.addEventListener("click", async () => {
+      // Analytics: Payment initiated for tokens
+      trackEvent('payment_initiated', { purchase_type: 'tokens' });
+      setLoadingState(submitPaymentButton, true);
+      try {
+        const { paymentIntent, error } = await stripe.confirmCardPayment(
+          clientSecret,
+          { payment_method: { card: tokenCardElement } }
+        );
+        if (error) {
+          throw error;
+        }
+        // Payment succeeded
+        displayMessage(paymentMessage, "Zahlung erfolgreich!", "success");
+        // Analytics: token purchase completed
+        trackEvent('token_purchase_completed', {
+          bundle_id: CONFIG.TOKENS.BUNDLE_ID,
+          grant_id: tokenGrantId,
+          amount_eur: CONFIG.TOKENS.PRICE_EUR,
+        });
+        grantIdDisplay.textContent = `Grant ID: ${tokenGrantId}`;
+        grantIdDisplay.style.display = "block";
+        // Update token balance
+        const balRes = await apiGetTokenBalance(tokenGrantId);
+        const bal = balRes?.tokens_remaining ?? 0;
+        setTokenBalance(bal);
+        updateTokenBalanceDisplay(bal, tokenBalanceDisplay);
+        // Cleanup
+        paymentElementContainer.style.display = "none";
+        submitPaymentButton.style.display = "none";
+      } catch (error) {
+        console.error("Token Purchase Payment Error:", error);
+        displayMessage(paymentMessage, error.message || "Zahlung fehlgeschlagen.", "error");
+      } finally {
+        setLoadingState(submitPaymentButton, false);
+        setLoadingState(buyTokensButton, false);
+      }
+    });
+  }
 
-  // Restore design state is now called within fetchAndDisplayProducts upon success
-  // restoreDesignState(); // Remove this call from here
+  // --- Shipping Options Flow ---
+  if (
+    getShippingButton &&
+    shippingOptionsContainer &&
+    shippingOptionsListDiv &&
+    shippingForm &&
+    shippingNameInput &&
+    shippingEmailInput &&
+    shippingAddress1Input &&
+    shippingCityInput &&
+    shippingZipInput &&
+    shippingCountrySelect
+  ) {
+    getShippingButton.addEventListener("click", async () => {
+      // Validate required shipping fields
+      const name = shippingNameInput.value.trim();
+      const email = shippingEmailInput.value.trim();
+      const address1 = shippingAddress1Input.value.trim();
+      const city = shippingCityInput.value.trim();
+      const zip = shippingZipInput.value.trim();
+      const country = shippingCountrySelect.value;
+      if (!name || !email || !address1 || !city || !zip || !country) {
+        displayMessage(shippingStatusDiv, "Bitte alle erforderlichen Felder ausfüllen.", "error");
+        return;
+      }
+      setLoadingState(getShippingButton, true);
+      try {
+        const recipient = {
+          address: {
+            name,
+            email,
+            address1,
+            address2: shippingAddress2Input.value.trim(),
+            city,
+            zip,
+            country_code: country,
+          },
+        };
+        const variant = getSelectedVariant();
+        const items = variant
+          ? [{ quantity: getQuantity(), catalog_variant_id: variant.id }]
+          : [];
+        const res = await apiGetShippingOptions(recipient, items);
+        const options = res?.shipping_options || [];
+        setShippingOptions(options);
+        displayShippingOptions(options, shippingOptionsListDiv);
+        shippingOptionsContainer.style.display = "block";
+      } catch (error) {
+        console.error("Shipping Options Error:", error);
+        displayMessage(shippingStatusDiv, "Versandoptionen konnten nicht geladen werden.", "error");
+      } finally {
+        setLoadingState(getShippingButton, false);
+      }
+    });
 
-  // Moved global listeners from inside initializeDesignControls
-  document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mouseup", handleMouseUp);
-  document.addEventListener("touchmove", handleTouchMove);
-  document.addEventListener("touchend", handleTouchEnd);
+    // Handle shipping option selection
+    shippingOptionsListDiv.addEventListener("click", (e) => {
+      const optEl = e.target.closest(".shipping-option");
+      if (!optEl) return;
+      const idx = parseInt(optEl.dataset.optionIndex, 10);
+      const options = getStateShippingOptions();
+      const selected = options[idx];
+      if (!selected) return;
+      shippingOptionsListDiv
+        .querySelectorAll(".shipping-option")
+        .forEach((el) => el.classList.remove("selected"));
+      optEl.classList.add("selected");
+      setSelectedShippingOption(selected);
+      // Analytics: Shipping option selected
+      trackEvent('shipping_option_selected', { service_name: selected.name || selected.service_name, rate: selected.rate });
+      tshirtPaymentContainer.style.display = "block";
+      // Render order summary
+      const summary = {
+        product: getSelectedProduct(),
+        color: getSelectedColorName(),
+        size: getSelectedSize(),
+        quantity: getQuantity(),
+        shipping: selected,
+      };
+      displayOrderSummary(summary, orderSummaryDiv);
+      // Initialize Stripe Elements for T-shirt order if not already
+      if (!orderCardElement) {
+        stripe = Stripe(CONFIG.STRIPE_PUBLISHABLE_KEY);
+        elements = stripe.elements();
+        orderCardElement = elements.create("card");
+        orderCardElement.mount("#tshirt-payment-element-container");
+      }
+    });
 
-  initializeDesignControls(); // Call after potentially needed elements are selected
+    // Confirm T-Shirt Order Payment
+    if (submitTshirtOrderButton) {
+      submitTshirtOrderButton.addEventListener("click", async () => {
+        setLoadingState(submitTshirtOrderButton, true);
+        try {
+          // Analytics: Payment initiated for T-shirt order
+          trackEvent('payment_initiated', { purchase_type: 'tshirt' });
+          const orderDetails = {
+            recipient: {
+              address: {
+                name: shippingNameInput.value.trim(),
+                email: shippingEmailInput.value.trim(),
+                address1: shippingAddress1Input.value.trim(),
+                address2: shippingAddress2Input.value.trim(),
+                city: shippingCityInput.value.trim(),
+                zip: shippingZipInput.value.trim(),
+                country_code: shippingCountrySelect.value,
+              },
+            },
+            items: [
+              {
+                quantity: getQuantity(),
+                catalog_variant_id: getSelectedVariant().id,
+              },
+            ],
+          };
+          const { client_secret: orderClientSecret } = await createTshirtOrder(orderDetails);
+          const { paymentIntent, error } = await stripe.confirmCardPayment(
+            orderClientSecret,
+            { payment_method: { card: orderCardElement } }
+          );
+          if (error) throw error;
+          displayMessage(tshirtPaymentMessage, "Bestellung erfolgreich! Sie erhalten eine Bestätigung per Email.", "success");
+          // Analytics: T-shirt order completed
+          trackEvent('tshirt_order_completed', {
+            payment_intent_id: paymentIntent.id,
+            shipping_country: shippingCountrySelect.value,
+          });
+        } catch (error) {
+          console.error("T-Shirt Order Error:", error);
+          displayMessage(tshirtPaymentMessage, error.message || "Bestellung fehlgeschlagen.", "error");
+        } finally {
+          setLoadingState(submitTshirtOrderButton, false);
+        }
+      });
+    }
+  }
+  
+  /* --- Temporarily Commented Out --- 
+  // --- Phase 2: Initialize Stripe & PostHog --- 
+  // ... existing commented out code ...
+  // --- Phase 3: Add ALL Event Listeners AFTER element selection & lib init ---
+  // ... existing commented out code ...
+  // --- Phase 4: Initial Setup Calls ---
+  // ... existing commented out code ...
+  */
 });
 
-// ... (Keep remaining function definitions AFTER DOMContentLoaded) ...
+// Add back function definitions (empty stubs or full code) later
+// For now, keep functions commented/removed
 
-// --- Function Definitions Used Within initializeDesignControls (Defined Earlier is better) ---
-// function handleTouchStart(e) { ... }
-// function handleTouchMove(e) { ... }
-// function handleTouchEnd() { ... }
+import {
+  fetchProducts,
+  uploadImage,
+  generateImage,
+  getTokenBalance as apiGetTokenBalance,
+  purchaseTokens,
+  createTshirtOrder,
+  getShippingOptions as apiGetShippingOptions,
+  recoverGrantId,
+} from "./api.js";
+import {
+  displayProducts,
+  updateTokenBalanceDisplay,
+  showSection,
+  displayMessage,
+  showProductListLoading,
+  clearProductList,
+  displayColorSwatches,
+  clearColorSwatches,
+  displaySizes,
+  clearSizes,
+  displayAiResults,
+  clearAiResults,
+  displayShippingOptions,
+  clearShippingOptions,
+  displayOrderSummary,
+} from "./ui.js";
+import { setLoadingState, hashEmail } from "./utils.js";
+import { CONFIG } from "./config.js";
+import {
+  initAnalytics,
+  trackEvent,
+  trackPageView,
+  optOutAnalytics,
+  optInAnalytics,
+} from "./analytics.js";
+import {
+  setAvailableProducts,
+  getAvailableProducts,
+  setSelectedProduct,
+  getSelectedProduct,
+  setSelectedColor,
+  getSelectedColorName,
+  setSelectedSize,
+  getSelectedSize,
+  setQuantity,
+  getQuantity,
+  getTokenGrantId,
+  saveTokenGrantId,
+  setTokenBalance,
+  restoreStateFromSession,
+  getSelectedImageUrl,
+  setSelectedImageUrl,
+  getSelectedVariant,
+  setShippingOptions,
+  getShippingOptions as getStateShippingOptions,
+  setSelectedShippingOption,
+} from "./state.js";
+import { initializeDesignControls, loadDesignImage } from "./design.js";
 
-// Ensure mouse drag/move handlers are also defined before use
-// function handleMouseDown(e) { ... }
-// function handleMouseMove(e) { ... }
-// function handleMouseUp() { ... }
-// function handleScaleSliderChange() { ... }
+// All backend communication should now use the imported API functions from api.js
+// All UI updates should now use the imported UI functions from ui.js
