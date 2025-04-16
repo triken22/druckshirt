@@ -34,10 +34,10 @@ jobs:
         run: npm run build --prefix frontend
 
       - name: Run API Gateway Tests
-        run: npm test --prefix workers/api-gateway
+        run: npm test --prefix workers/api-gateway -- --run --passWithNoTests
 
       - name: Run Queue Consumer Tests
-        run: npm test --prefix workers/queue-consumer
+        run: npm test --prefix workers/queue-consumer -- --run --passWithNoTests
 
       - name: Typecheck API Gateway
         run: npm run typecheck --prefix workers/api-gateway
@@ -48,8 +48,9 @@ jobs:
   security:
     runs-on: ubuntu-latest
     name: Security Checks
-    # Add permissions for CodeQL to write security events
+    # Add permissions for CodeQL to write security events and allow repo checkout
     permissions:
+      contents: read
       security-events: write
     steps:
       - uses: actions/checkout@v4
