@@ -5,9 +5,13 @@ on:
     branches:
       - main
       - develop
+  workflow_dispatch:
 
-jobs:
+ jobs:
   deploy:
+    concurrency:
+      group: deploy-backend-${{ github.ref_name }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     name: Deploy Workers
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
