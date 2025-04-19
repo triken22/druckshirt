@@ -27,8 +27,8 @@ name = "druckshirt-api-gateway-staging"
 
 # Define vars explicitly for staging
 [env.staging.vars]
-# ALLOWED_ORIGINS is correctly set for staging frontend + localhost
-ALLOWED_ORIGINS = "http://localhost:3000,https://druckshirt-frontend.pages.dev"
+# Set allowed origins for staging frontend, previews, and localhost
+ALLOWED_ORIGINS = "https://druckshirt-frontend.pages.dev,*.druckshirt-frontend.pages.dev,http://localhost:5173"
 # FIXME: You MUST replace this placeholder with your actual staging R2 public URL prefix!
 # Example: "https://pub-xxxxxxxx.r2.dev" or your custom domain pointing to the staging R2 bucket.
 R2_PUBLIC_URL_PREFIX = "https://pub-ce3cfb8f641747a4b56c9c9f3bbd7096.r2.dev" # Replace this
@@ -70,14 +70,21 @@ binding = "TOKEN_QUEUE"
 [[env.production.queues.producers]]
 queue = "order-fulfillment-queue-production" # Verified Production Queue
 binding = "ORDER_QUEUE"
+
+# Add production vars section
+[env.production.vars]
+ALLOWED_ORIGINS = "https://druckshirt-frontend.pages.dev,*.druckshirt-frontend.pages.dev,http://localhost:5173"
+# Ensure you have a production R2_PUBLIC_URL_PREFIX set via secrets or here
+# R2_PUBLIC_URL_PREFIX = "<YOUR_PRODUCTION_R2_PUBLIC_URL_HERE>" # Example
+
 # --- End Production Values ---
 
 # Variables (Top-Level - Consider if these should match production or local)
 # Usually overridden by environment, but sets default for `wrangler dev` if no --env specified
 [vars]
-# Add localhost AND your PRODUCTION frontend URL, comma-separated
-ALLOWED_ORIGINS = "http://localhost:3000,<YOUR_PRODUCTION_FRONTEND_URL_HERE>" # Replace <...>
-R2_PUBLIC_URL_PREFIX = "https://pub-ce3cfb8f641747a4b56c9c9f3bbd7096.r2.dev" # Replace this
+# Set allowed origins for production, previews, and localhost
+ALLOWED_ORIGINS = "https://druckshirt-frontend.pages.dev,*.druckshirt-frontend.pages.dev,http://localhost:5173"
+R2_PUBLIC_URL_PREFIX = "https://pub-ce3cfb8f641747a4b56c9c9f3bbd7096.r2.dev" # Replace this if default differs
 
 # Secrets are set via GitHub Actions during deploy or manually via wrangler secret put
 # DO NOT add secrets directly to this file.

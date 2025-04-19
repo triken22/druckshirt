@@ -48,7 +48,7 @@ export async function makeApiCall(
 // --- Specific API endpoint functions ---
 
 export function fetchProducts() {
-  return makeApiCall("/printful/products", { method: "GET" });
+  return makeApiCall("/api/printful/products", { method: "GET" });
 }
 
 export function uploadImage(formData) {
@@ -111,5 +111,3 @@ function getRetryDelay(retryCount, config) {
   );
   return delay + Math.random() * 1000; // Add jitter
 }
-
-
