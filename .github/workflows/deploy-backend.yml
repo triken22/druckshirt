@@ -71,6 +71,15 @@ jobs:
           npx sentry-cli releases new "$SENTRY_RELEASE"
           npx sentry-cli releases set-commits "$SENTRY_RELEASE" --auto --ignore-missing
           echo "Uploading API Gateway source maps..."
+          # Add DNS checks before uploading
+          echo "--- Running DNS Checks before API Gateway sourcemap upload ---"
+          echo "Attempting ping..."
+          ping -c 4 sentry.io || echo "Ping failed (exit code $?)"
+          echo "Attempting curl..."
+          curl -v https://sentry.io || echo "Curl failed (exit code $?)"
+          echo "Attempting nslookup..."
+          nslookup sentry.io || echo "nslookup failed (exit code $?)"
+          echo "--- DNS Checks Complete ---"
           # Adjust include path if necessary based on wrangler output
           npx sentry-cli releases files "$SENTRY_RELEASE" upload-sourcemaps --url-prefix '~/' --validate ./dist
         env:
@@ -103,6 +112,15 @@ jobs:
           export SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           export SENTRY_RELEASE=$(npx sentry-cli releases propose-version)
           echo "Uploading Queue Consumer source maps for release: $SENTRY_RELEASE"
+          # Add DNS checks before uploading
+          echo "--- Running DNS Checks before Queue Consumer sourcemap upload ---"
+          echo "Attempting ping..."
+          ping -c 4 sentry.io || echo "Ping failed (exit code $?)"
+          echo "Attempting curl..."
+          curl -v https://sentry.io || echo "Curl failed (exit code $?)"
+          echo "Attempting nslookup..."
+          nslookup sentry.io || echo "nslookup failed (exit code $?)"
+          echo "--- DNS Checks Complete ---"
           npx sentry-cli releases files "$SENTRY_RELEASE" upload-sourcemaps --url-prefix '~/' --validate ./dist
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
