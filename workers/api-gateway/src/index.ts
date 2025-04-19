@@ -682,9 +682,11 @@ app.get("/api/printful/products", async (c) => {
     if (categoryId) {
       queryParams.set("category_id", categoryId);
     }
-    // Set selling region: use provided query param or default to EU
-    const regionParam = c.req.query("region") || "EU";
-    queryParams.set("region", regionParam);
+    // Forward region parameter if provided (e.g., EU, US)
+    const regionParam = c.req.query("region");
+    if (regionParam) {
+      queryParams.set("region", regionParam);
+    }
 
     // Fetch catalog products (no store context required)
     const response = await printfulRequestGateway(
@@ -695,13 +697,20 @@ app.get("/api/printful/products", async (c) => {
     );
 
     if (!response.ok) {
-      const errorBody = await response.text();
+      // Propagate Printful error details for easier debugging
+      const errorText = await response.text();
       console.error(
         `Printful API Error (Get Products): ${response.status}`,
-        errorBody
+        errorText
       );
+      let details: any;
+      try {
+        details = JSON.parse(errorText);
+      } catch {
+        details = errorText;
+      }
       return c.json(
-        { error: "Failed to fetch products from Printful provider" },
+        { error: "Printful API Error", status: response.status, details },
         500
       );
     }
