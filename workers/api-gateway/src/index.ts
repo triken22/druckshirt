@@ -629,13 +629,10 @@ interface FormattedProduct {
 // GET /api/printful/products
 app.get("/api/printful/products", async (c) => {
   try {
-    if (
-      !c.env.PRINTFUL_API_KEY ||
-      !c.env.STATE_KV ||
-      !c.env.PRINTFUL_STORE_ID
-    ) {
+    // Ensure Printful API key and KV binding are configured
+    if (!c.env.PRINTFUL_API_KEY || !c.env.STATE_KV) {
       console.error(
-        "PRINTFUL_API_KEY, STATE_KV, or PRINTFUL_STORE_ID binding/secret missing."
+        "PRINTFUL_API_KEY or STATE_KV binding/secret missing."
       );
       return c.json({ error: "Server configuration error" }, 500);
     }
@@ -685,13 +682,12 @@ app.get("/api/printful/products", async (c) => {
       queryParams.set("category_id", categoryId);
     }
 
+    // Fetch catalog products (no store context required)
     const response = await printfulRequestGateway(
       c.env.PRINTFUL_API_KEY,
       "GET",
-      "/catalog-products",
-      queryParams,
-      undefined,
-      c.env.PRINTFUL_STORE_ID
+      "/catalog/products",
+      queryParams
     );
 
     if (!response.ok) {
