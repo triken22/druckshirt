@@ -40,6 +40,7 @@ jobs:
           VITE_POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           # Optional: Add POSTHOG_HOST_URL if it's stored as a secret
           VITE_POSTHOG_HOST_URL: ${{ secrets.POSTHOG_HOST_URL }}
+          VITE_API_BASE_URL: ${{ github.ref_name == 'main' && secrets.PRODUCTION_API_BASE_URL || secrets.STAGING_API_BASE_URL }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
