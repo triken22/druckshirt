@@ -717,12 +717,41 @@ app.get("/api/printful/products", async (c) => {
         500
       );
     }
-    const result = (await response.json()) as {
-      code: number;
-      data: PrintfulProduct[];
-    };
-    if (result.code !== 200 || !Array.isArray(result.data)) {
-      console.error("Unexpected Printful API response format:", result);
+
+    // --- Log the raw response body ---
+    const responseBodyText = await response.clone().text(); // Clone to read safely
+    console.log("Raw Printful Response Body:", responseBodyText);
+    // --- End Logging ---
+
+    // Attempt to parse the original response
+    let result: { code: number; result: PrintfulProduct[] };
+    try {
+      result = (await response.json()) as {
+        code: number;
+        result: PrintfulProduct[];
+      };
+    } catch (parseError) {
+      console.error(
+        "Failed to parse Printful JSON response. Body was:",
+        responseBodyText,
+        "Parse Error:",
+        parseError
+      );
+      // Return a specific error if JSON parsing fails
+      return c.json(
+        { error: "Failed to parse response from Printful provider" },
+        500
+      );
+    }
+
+    // Check the parsed structure
+    if (result.code !== 200 || !Array.isArray(result.result)) {
+      console.error(
+        "Unexpected Printful API response format. Parsed result:",
+        result,
+        "Original body:",
+        responseBodyText
+      );
       return c.json(
         { error: "Invalid response format from Printful provider" },
         500
@@ -730,7 +759,7 @@ app.get("/api/printful/products", async (c) => {
     }
 
     // --- Format Response ---
-    const formattedProducts: FormattedProduct[] = result.data.map(
+    const formattedProducts: FormattedProduct[] = result.result.map(
       (product: PrintfulProduct) => {
         const availableSizes = [
           ...new Set(product.variants.map((v) => v.size)),
