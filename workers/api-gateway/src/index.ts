@@ -110,6 +110,10 @@ export interface Env {
    * @secret POSTHOG_HOST_URL
    */
   POSTHOG_HOST_URL?: string;
+  /** @secret PRINTIFY_API_KEY */
+  PRINTIFY_API_KEY: string;
+  /** @variable PRINTIFY_SHOP_ID */
+  PRINTIFY_SHOP_ID: string;
 
   // Common convention for Cloudflare environment (staging/production)
   CF_WORKER_ENV?: string;
@@ -905,6 +909,59 @@ app.get("/api/products", async (c) => {
   }
 });
 
+// --- Printify API Helper & Catalog Route ---
+const PRINTIFY_BASE = "https://api.printify.com/v1";
+async function printifyRequest(
+  shopId: string,
+  apiKey: string,
+  method: string,
+  path: string,
+  body?: any,
+  query?: URLSearchParams
+): Promise<Response> {
+  let url = `${PRINTIFY_BASE}/shops/${shopId}${path}`;
+  if (query) url += `?${query.toString()}`;
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res;
+}
+
+// GET /api/products (Printify catalog)
+app.get("/api/products", async (c) => {
+  const shopId = c.env.PRINTIFY_SHOP_ID;
+  const apiKey = c.env.PRINTIFY_API_KEY;
+  if (!shopId || !apiKey) {
+    console.error("PRINTIFY_SHOP_ID or PRINTIFY_API_KEY missing.");
+    return c.json({ error: "Server configuration error" }, 500);
+  }
+  const limit = c.req.query("limit") || "20";
+  const offset = c.req.query("offset") || "0";
+  const queryParams = new URLSearchParams();
+  queryParams.set("limit", limit);
+  queryParams.set("offset", offset);
+  const resp = await printifyRequest(
+    shopId,
+    apiKey,
+    "GET",
+    "/products.json",
+    undefined,
+    queryParams
+  );
+  if (!resp.ok) {
+    const err = await resp.json();
+    console.error("Printify catalog error:", err);
+    return c.json({ error: "Printify catalog error", details: err }, resp.status);
+  }
+  const data = await resp.json();
+  const items = data.data;
+  return c.json({ products: items });
+});
 // POST /api/printful/shipping-options
 app.post("/api/printful/shipping-options", async (c) => {
   if (!c.env.PRINTIFY_API_KEY || !c.env.PRINTIFY_SHOP_ID) {
