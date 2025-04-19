@@ -256,7 +256,10 @@ app.use("/api/*", async (c, next) => {
       // Check against allowed origins patterns
       for (const allowed of allowedOrigins) {
         // Full origin match (with protocol)
-        if ((allowed.startsWith("http://") || allowed.startsWith("https://")) && origin === allowed) {
+        if (
+          (allowed.startsWith("http://") || allowed.startsWith("https://")) &&
+          origin === allowed
+        ) {
           return origin;
         }
         // Wildcard domain match (e.g., *.example.com)
@@ -631,9 +634,7 @@ app.get("/api/printful/products", async (c) => {
   try {
     // Ensure Printful API key and KV binding are configured
     if (!c.env.PRINTFUL_API_KEY || !c.env.STATE_KV) {
-      console.error(
-        "PRINTFUL_API_KEY or STATE_KV binding/secret missing."
-      );
+      console.error("PRINTFUL_API_KEY or STATE_KV binding/secret missing.");
       return c.json({ error: "Server configuration error" }, 500);
     }
 
@@ -693,7 +694,9 @@ app.get("/api/printful/products", async (c) => {
       c.env.PRINTFUL_API_KEY,
       "GET",
       "/catalog/products",
-      queryParams
+      queryParams,
+      undefined,
+      c.env.PRINTFUL_STORE_ID
     );
 
     if (!response.ok) {
@@ -1308,8 +1311,8 @@ export default {
 };
 
 // --- Printful API Client Helper (for API Gateway) ---
-
-const PRINTFUL_API_BASE_GW = "https://api.printful.com/v2"; // Avoid name clash if ever merged
+// Use the base API URL; versioning handled via headers by Printful
+const PRINTFUL_API_BASE_GW = "https://api.printful.com";
 
 async function printfulRequestGateway(
   apiKey: string,
