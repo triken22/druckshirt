@@ -251,10 +251,40 @@ app.use("/api/*", async (c, next) => {
 
   const corsMiddleware = cors({
     origin: (origin) => {
-      // Check origin against the pre-calculated list
-      return allowedOrigins.includes(origin) || origin === undefined
-        ? origin
-        : null;
+      // If no Origin header, allow (same-origin or non-browser requests)
+      if (origin === undefined) return origin;
+      // Check against allowed origins patterns
+      for (const allowed of allowedOrigins) {
+        // Full origin match (with protocol)
+        if ((allowed.startsWith("http://") || allowed.startsWith("https://")) && origin === allowed) {
+          return origin;
+        }
+        // Wildcard domain match (e.g., *.example.com)
+        if (allowed.startsWith("*")) {
+          try {
+            const { host } = new URL(origin);
+            const hostPattern = allowed.slice(1); // remove leading '*'
+            if (host.endsWith(hostPattern)) {
+              return origin;
+            }
+          } catch {
+            // ignore invalid origin
+          }
+        }
+        // Host-only match (no protocol, no wildcard)
+        if (!allowed.includes("://") && !allowed.startsWith("*")) {
+          try {
+            const { host } = new URL(origin);
+            if (host === allowed) {
+              return origin;
+            }
+          } catch {
+            // ignore invalid origin
+          }
+        }
+      }
+      // Not allowed
+      return null;
     },
     allowMethods: ["GET", "POST", "OPTIONS", "HEAD"],
     allowHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
