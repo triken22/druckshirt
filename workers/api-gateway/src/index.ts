@@ -675,12 +675,16 @@ app.get("/api/printful/products", async (c) => {
     c.header("X-Cache", "miss");
 
     // --- Fetch from Printful API ---
+    // Build query parameters for Printful catalog API
     const queryParams = new URLSearchParams();
     queryParams.set("limit", limit.toString());
     queryParams.set("offset", offset.toString());
     if (categoryId) {
       queryParams.set("category_id", categoryId);
     }
+    // Set selling region: use provided query param or default to EU
+    const regionParam = c.req.query("region") || "EU";
+    queryParams.set("region", regionParam);
 
     // Fetch catalog products (no store context required)
     const response = await printfulRequestGateway(
