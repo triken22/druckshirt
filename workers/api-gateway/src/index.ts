@@ -693,7 +693,7 @@ app.get("/api/printful/products", async (c) => {
     const response = await printfulRequestGateway(
       c.env.PRINTFUL_API_KEY,
       "GET",
-      "/catalog/products",
+      "/sync/products",
       queryParams,
       undefined,
       c.env.PRINTFUL_STORE_ID
