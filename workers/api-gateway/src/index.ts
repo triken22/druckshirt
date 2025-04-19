@@ -772,82 +772,103 @@ app.get("/api/products", async (c) => {
       );
     }
 
-    // --- Format Response (Needs Adaptation for Printify -> FormattedProduct) ---
+    // --- Format Response (Improved Mapping) ---
     const formattedProducts: FormattedProduct[] = result.data.map(
       (product: PrintifyProduct): FormattedProduct => {
-        // Helper to get option values (e.g., S, M, L or White, Black)
-        const getOptionValues = (name: string): string[] => {
-          const option = product.options.find((o) => o.name === name);
-          return option ? option.values.map((v) => v.title) : [];
-        };
+        // Helper map for quick option lookup by ID
+        const optionValueMap = new Map<
+          number,
+          { title: string; type: string; colors?: string[] }
+        >();
+        product.options.forEach((opt) => {
+          opt.values.forEach((val) => {
+            optionValueMap.set(val.id, {
+              title: val.title,
+              type: opt.type,
+              colors: opt.type === "color" ? (val as any).colors : undefined,
+            });
+          });
+        });
 
-        const availableSizes = getOptionValues("Sizes"); // Common name
-        const availableColors = getOptionValues("Colors"); // Common name
-
-        // Map Printify options to your color format
-        const colorsFormatted =
-          product.options
-            .find((o) => o.name === "Colors")
-            ?.values.map((v) => ({ name: v.title, code: `#placeholder` })) ||
-          []; // Placeholder for color code
-
-        // Find default image
+        // Helper map for image lookup by variant ID
+        const variantImageMap = new Map<number, string>();
+        product.images.forEach((img) => {
+          img.variant_ids.forEach((variantId) => {
+            if (!variantImageMap.has(variantId)) {
+              // Keep first image found per variant
+              variantImageMap.set(variantId, img.src);
+            }
+          });
+        });
         const defaultImage =
           product.images.find((img) => img.is_default)?.src ||
           product.images[0]?.src ||
           "";
 
+        // Extract available sizes and colors directly from options
+        const availableSizes =
+          product.options
+            .find((o) => o.name === "Sizes")
+            ?.values.map((v) => v.title)
+            .sort() || [];
+        const availableColors =
+          product.options
+            .find((o) => o.name === "Colors")
+            ?.values.map((v) => ({
+              name: v.title,
+              // Use the first color hex code provided, default to placeholder
+              code: (v as any).colors?.[0] || "#FFFFFF",
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name)) || [];
+
         const variants: FormattedVariant[] = product.variants.map((v) => {
-          // Extract size and color from variant title or options mapping (complex)
-          // This is a simplified placeholder - real mapping depends on option IDs
-          const variantOptionValues = product.options
-            .map(
-              (opt) =>
-                opt.values.find((val) => v.options.includes(val.id))?.title
-            )
-            .filter(Boolean);
-          const size =
-            getOptionValues("Sizes").find((s) =>
-              variantOptionValues.includes(s)
-            ) || "N/A";
-          const color =
-            getOptionValues("Colors").find((c) =>
-              variantOptionValues.includes(c)
-            ) || "N/A";
-          const colorCode =
-            colorsFormatted.find((cf) => cf.name === color)?.code ||
-            "#placeholder";
+          let size = "N/A";
+          let color = "N/A";
+          let color_code = "#FFFFFF";
+
+          v.options.forEach((optionId) => {
+            const optionDetails = optionValueMap.get(optionId);
+            if (optionDetails) {
+              if (optionDetails.type === "size") {
+                size = optionDetails.title;
+              } else if (optionDetails.type === "color") {
+                color = optionDetails.title;
+                color_code = optionDetails.colors?.[0] || "#FFFFFF";
+              }
+            }
+          });
 
           return {
-            id: v.id, // Printify Variant ID (number)
+            id: v.id,
             size: size,
             color: color,
-            color_code: colorCode, // Needs proper mapping
-            in_stock: v.is_enabled, // Assuming enabled means in stock
-            // image_url: Need to map variant IDs to images
+            color_code: color_code,
+            in_stock: v.is_enabled,
+            image_url: variantImageMap.get(v.id), // Get mapped image or undefined
           };
         });
 
-        // Map Printify print areas if needed (placeholder)
+        // Map Printify print areas if needed (still a placeholder)
         const placements: FormattedPlacement[] = (
           product.print_areas || []
-        ).map((p) => ({
-          placement: p.placeholder || "unknown", // Adjust based on actual data
-          print_area_width_px: p.width || 0, // Adjust based on actual data
-          print_area_height_px: p.height || 0, // Adjust based on actual data
+        ).map((p: any) => ({
+          // Add type 'any' for placeholder access
+          placement: p.placeholder || "default", // Use 'default' or adjust
+          print_area_width_px: 0, // Placeholder - Printify areas complex
+          print_area_height_px: 0, // Placeholder - Printify areas complex
         }));
 
         return {
-          id: parseInt(product.id, 10), // Frontend expects number, Printify ID is string
+          id: parseInt(product.id, 10), // Convert Printify string ID to number
           name: product.title,
           description: product.description,
-          brand: null, // Printify doesn't directly provide brand/model like Printful
-          model: null,
+          brand: null, // Not available from Printify products endpoint
+          model: null, // Not available from Printify products endpoint
           default_image_url: defaultImage,
           available_sizes: availableSizes,
-          available_colors: colorsFormatted,
+          available_colors: availableColors,
           variants: variants,
-          placements: placements, // Needs verification
+          placements: placements, // Needs verification/implementation if used
         };
       }
     );
