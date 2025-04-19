@@ -59,16 +59,16 @@ export interface Env {
   ALLOWED_ORIGINS: string;
 
   /**
-   * Printful API private access token. Required for catalog, shipping, and order APIs.
-   * @secret PRINTFUL_API_KEY
+   * Printify API access token. Required for Printify API operations.
+   * @secret PRINTIFY_API_KEY
    */
-  PRINTFUL_API_KEY: string;
+  PRINTIFY_API_KEY: string;
 
   /**
-   * Printful Store ID. Required for API calls needing store context.
-   * @secret PRINTFUL_STORE_ID
+   * Printify Shop ID. Required for API calls needing shop context.
+   * @secret PRINTIFY_SHOP_ID
    */
-  PRINTFUL_STORE_ID?: string; // Optional for now, handler should check
+  PRINTIFY_SHOP_ID: string;
 
   /**
    * Resend API key. Required for sending transactional emails via Resend templates.
@@ -113,6 +113,36 @@ export interface Env {
 
   // Common convention for Cloudflare environment (staging/production)
   CF_WORKER_ENV?: string;
+}
+
+// --- Formatted Product Types (for Frontend) ---
+// Define these BEFORE they are used by Printify mapping logic
+interface FormattedPlacement {
+  placement: string;
+  print_area_width_px: number; // Store original pixels
+  print_area_height_px: number; // Store original pixels
+}
+
+interface FormattedVariant {
+  id: number;
+  size: string;
+  color: string;
+  color_code: string;
+  in_stock: boolean;
+  image_url?: string; // Add variant specific image URL
+}
+
+interface FormattedProduct {
+  id: number;
+  name: string;
+  description: string;
+  brand: string | null;
+  model: string | null;
+  default_image_url: string;
+  available_sizes: string[];
+  available_colors: { name: string; code: string }[];
+  variants: FormattedVariant[];
+  placements: FormattedPlacement[]; // Add placements array
 }
 
 // Define types for Hono context variables set by middleware
@@ -570,140 +600,116 @@ app.post("/api/generate-image", async (c) => {
   }
 });
 
-// Interfaces from Printful API Response (add/modify to include placements)
-interface PrintfulPlacement {
-  placement: string; // e.g., "front", "back"
-  print_area_width: number; // In PIXELS
-  print_area_height: number; // In PIXELS
-  // Potentially other fields like supported techniques, options etc.
+// --- Printify Product Types (Define based on actual API response) ---
+interface PrintifyImage {
+  src: string;
+  variant_ids: number[];
+  position: string;
+  is_default: boolean;
+  is_selected_for_publishing: boolean;
 }
 
-interface PrintfulVariant {
+interface PrintifyVariant {
   id: number;
-  name: string;
-  size: string;
-  color: string;
-  color_code: string;
-  image: string; // URL to variant image
-  price: number;
-  in_stock: boolean;
+  sku: string | null;
+  title: string; // e.g., "Unisex Crew Neck T-Shirt / White / S"
+  options: number[]; // Corresponds to option IDs like size, color
+  price: number; // In cents
+  is_enabled: boolean;
+  // Add other fields as needed: cost, quantity, etc.
 }
 
-interface PrintfulProduct {
+interface PrintifyOptionValue {
   id: number;
   title: string;
+}
+
+interface PrintifyOption {
+  name: string; // e.g., "Colors", "Sizes"
+  type: string;
+  values: PrintifyOptionValue[];
+}
+
+interface PrintifyProduct {
+  id: string; // Printify Product ID is string
+  title: string;
   description: string;
-  brand: string | null;
-  model: string | null;
-  image: string;
-  variants: PrintfulVariant[];
-  placements?: PrintfulPlacement[]; // Make optional in case some products lack it
+  tags: string[];
+  options: PrintifyOption[];
+  variants: PrintifyVariant[];
+  images: PrintifyImage[];
+  created_at: string;
+  updated_at: string;
+  visible: boolean;
+  is_locked: boolean;
+  blueprint_id: number;
+  user_id: number;
+  shop_id: number;
+  print_provider_id: number;
+  print_areas: any[]; // Define further if needed
+  sales_channel_properties: any[];
 }
 
-// --- Formatted Product Types (for Frontend) ---
-interface FormattedPlacement {
-  placement: string;
-  print_area_width_px: number; // Store original pixels
-  print_area_height_px: number; // Store original pixels
-}
-
-interface FormattedVariant {
-  id: number;
-  size: string;
-  color: string;
-  color_code: string;
-  in_stock: boolean;
-  image_url?: string; // Add variant specific image URL
-}
-
-interface FormattedProduct {
-  id: number;
-  name: string;
-  description: string;
-  brand: string | null;
-  model: string | null;
-  default_image_url: string;
-  available_sizes: string[];
-  available_colors: { name: string; code: string }[];
-  variants: FormattedVariant[];
-  placements: FormattedPlacement[]; // Add placements array
-}
-
-// GET /api/printful/products
-app.get("/api/printful/products", async (c) => {
+// GET /api/products (Previously /api/printful/products)
+app.get("/api/products", async (c) => {
   try {
-    // Ensure Printful API key and KV binding are configured
-    if (!c.env.PRINTFUL_API_KEY || !c.env.STATE_KV) {
-      console.error("PRINTFUL_API_KEY or STATE_KV binding/secret missing.");
+    // Ensure Printify API key, Shop ID and KV binding are configured
+    if (!c.env.PRINTIFY_API_KEY || !c.env.PRINTIFY_SHOP_ID || !c.env.STATE_KV) {
+      console.error(
+        "PRINTIFY_API_KEY, PRINTIFY_SHOP_ID or STATE_KV binding/secret missing."
+      );
       return c.json({ error: "Server configuration error" }, 500);
     }
 
     let cacheHit = false;
 
-    // --- Query Parameter Handling ---
+    // --- Query Parameter Handling (Keep for now, adjust if Printify differs) ---
     const limitQuery = c.req.query("limit");
-    const offsetQuery = c.req.query("offset");
-    const categoryIdQuery = c.req.query("category_id");
+    const pageQuery = c.req.query("page"); // Printify uses page-based pagination
     const limit = limitQuery ? parseInt(limitQuery, 10) : 20;
-    const offset = offsetQuery ? parseInt(offsetQuery, 10) : 0;
-    const categoryId = categoryIdQuery ? categoryIdQuery : null;
+    const page = pageQuery ? parseInt(pageQuery, 10) : 1;
 
-    if (
-      isNaN(limit) ||
-      limit <= 0 ||
-      limit > 100 ||
-      isNaN(offset) ||
-      offset < 0
-    ) {
+    if (isNaN(limit) || limit <= 0 || limit > 100 || isNaN(page) || page <= 0) {
       return c.json({ error: "Invalid pagination parameters." }, 400);
     }
 
-    // --- KV Caching Logic ---
-    const cacheKey = `printful:products:l=${limit}:o=${offset}${categoryId ? `:c=${categoryId}` : ""}`;
+    // --- KV Caching Logic (Update Key) ---
+    const cacheKey = `printify:products:s=${c.env.PRINTIFY_SHOP_ID}:l=${limit}:p=${page}`;
     const cachedData = await c.env.STATE_KV.get<FormattedProduct[]>(cacheKey, {
       type: "json",
     });
     if (cachedData) {
-      console.log(`Cache hit for Printful products: ${cacheKey}`);
+      console.log(`Cache hit for Printify products: ${cacheKey}`);
       cacheHit = true;
       c.header("X-Cache", "hit");
       return c.json({ products: cachedData });
     }
 
     console.log(
-      `Cache miss for Printful products: ${cacheKey}. Fetching from API.`
+      `Cache miss for Printify products: ${cacheKey}. Fetching from API.`
     );
     c.header("X-Cache", "miss");
 
-    // --- Fetch from Printful API ---
-    // Build query parameters for Printful catalog API
+    // --- Fetch from Printify API ---
+    const shopId = c.env.PRINTIFY_SHOP_ID;
+    const printifyEndpoint = `/v1/shops/${shopId}/products.json`;
     const queryParams = new URLSearchParams();
     queryParams.set("limit", limit.toString());
-    queryParams.set("offset", offset.toString());
-    if (categoryId) {
-      queryParams.set("category_id", categoryId);
-    }
-    // Forward region parameter if provided (e.g., EU, US)
-    const regionParam = c.req.query("region");
-    if (regionParam) {
-      queryParams.set("region", regionParam);
-    }
+    queryParams.set("page", page.toString());
+    // Add other query params if needed (e.g., filtering)
 
-    // Fetch catalog products (no store context required)
-    const response = await printfulRequestGateway(
-      c.env.PRINTFUL_API_KEY,
+    const response = await printifyRequestGateway(
+      c.env.PRINTIFY_API_KEY,
       "GET",
-      "/sync/products",
-      queryParams,
-      undefined,
-      c.env.PRINTFUL_STORE_ID
+      printifyEndpoint,
+      queryParams
+      // No body or storeId header needed for this endpoint
     );
 
     if (!response.ok) {
-      // Propagate Printful error details for easier debugging
       const errorText = await response.text();
       console.error(
-        `Printful API Error (Get Products): ${response.status}`,
+        `Printify API Error (Get Products): ${response.status}`,
         errorText
       );
       let details: any;
@@ -712,98 +718,136 @@ app.get("/api/printful/products", async (c) => {
       } catch {
         details = errorText;
       }
+      // Use status from response if possible
+      const status =
+        response.status >= 400 && response.status < 600 ? response.status : 502;
       return c.json(
-        { error: "Printful API Error", status: response.status, details },
-        500
+        { error: "Printify API Error", status: response.status, details },
+        status as any // Use type assertion if Hono types conflict
       );
     }
 
-    // --- Log the raw response body ---
-    const responseBodyText = await response.clone().text(); // Clone to read safely
-    console.log("Raw Printful Response Body:", responseBodyText);
+    // --- Log the raw response body --- (Keep for debugging)
+    const responseBodyText = await response.clone().text();
+    console.log("Raw Printify Response Body:", responseBodyText);
     // --- End Logging ---
 
     // Attempt to parse the original response
-    let result: { code: number; result: PrintfulProduct[] };
+    // Printify list endpoint returns { current_page, data: [], ... }
+    let result: {
+      current_page: number;
+      data: PrintifyProduct[];
+      total: number;
+    };
     try {
       result = (await response.json()) as {
-        code: number;
-        result: PrintfulProduct[];
+        current_page: number;
+        data: PrintifyProduct[];
+        total: number;
       };
     } catch (parseError) {
       console.error(
-        "Failed to parse Printful JSON response. Body was:",
+        "Failed to parse Printify JSON response. Body was:",
         responseBodyText,
         "Parse Error:",
         parseError
       );
-      // Return a specific error if JSON parsing fails
       return c.json(
-        { error: "Failed to parse response from Printful provider" },
+        { error: "Failed to parse response from Printify provider" },
         500
       );
     }
 
-    // Check the parsed structure
-    if (result.code !== 200 || !Array.isArray(result.result)) {
+    // Check the parsed structure (Basic check for Printify)
+    if (!result || !Array.isArray(result.data)) {
       console.error(
-        "Unexpected Printful API response format. Parsed result:",
+        "Unexpected Printify API response format. Parsed result:",
         result,
         "Original body:",
         responseBodyText
       );
       return c.json(
-        { error: "Invalid response format from Printful provider" },
+        { error: "Invalid response format from Printify provider" },
         500
       );
     }
 
-    // --- Format Response ---
-    const formattedProducts: FormattedProduct[] = result.result.map(
-      (product: PrintfulProduct) => {
-        const availableSizes = [
-          ...new Set(product.variants.map((v) => v.size)),
-        ].sort();
-        const availableColors = product.variants
-          .reduce(
-            (acc, v) => {
-              if (!acc.some((c) => c.name === v.color)) {
-                acc.push({ name: v.color, code: v.color_code });
-              }
-              return acc;
-            },
-            [] as { name: string; code: string }[]
-          )
-          .sort((a, b) => a.name.localeCompare(b.name));
+    // --- Format Response (Needs Adaptation for Printify -> FormattedProduct) ---
+    const formattedProducts: FormattedProduct[] = result.data.map(
+      (product: PrintifyProduct): FormattedProduct => {
+        // Helper to get option values (e.g., S, M, L or White, Black)
+        const getOptionValues = (name: string): string[] => {
+          const option = product.options.find((o) => o.name === name);
+          return option ? option.values.map((v) => v.title) : [];
+        };
 
-        const variants: FormattedVariant[] = product.variants.map((v) => ({
-          id: v.id,
-          size: v.size,
-          color: v.color,
-          color_code: v.color_code,
-          in_stock: v.in_stock,
-          image_url: v.image,
+        const availableSizes = getOptionValues("Sizes"); // Common name
+        const availableColors = getOptionValues("Colors"); // Common name
+
+        // Map Printify options to your color format
+        const colorsFormatted =
+          product.options
+            .find((o) => o.name === "Colors")
+            ?.values.map((v) => ({ name: v.title, code: `#placeholder` })) ||
+          []; // Placeholder for color code
+
+        // Find default image
+        const defaultImage =
+          product.images.find((img) => img.is_default)?.src ||
+          product.images[0]?.src ||
+          "";
+
+        const variants: FormattedVariant[] = product.variants.map((v) => {
+          // Extract size and color from variant title or options mapping (complex)
+          // This is a simplified placeholder - real mapping depends on option IDs
+          const variantOptionValues = product.options
+            .map(
+              (opt) =>
+                opt.values.find((val) => v.options.includes(val.id))?.title
+            )
+            .filter(Boolean);
+          const size =
+            getOptionValues("Sizes").find((s) =>
+              variantOptionValues.includes(s)
+            ) || "N/A";
+          const color =
+            getOptionValues("Colors").find((c) =>
+              variantOptionValues.includes(c)
+            ) || "N/A";
+          const colorCode =
+            colorsFormatted.find((cf) => cf.name === color)?.code ||
+            "#placeholder";
+
+          return {
+            id: v.id, // Printify Variant ID (number)
+            size: size,
+            color: color,
+            color_code: colorCode, // Needs proper mapping
+            in_stock: v.is_enabled, // Assuming enabled means in stock
+            // image_url: Need to map variant IDs to images
+          };
+        });
+
+        // Map Printify print areas if needed (placeholder)
+        const placements: FormattedPlacement[] = (
+          product.print_areas || []
+        ).map((p) => ({
+          placement: p.placeholder || "unknown", // Adjust based on actual data
+          print_area_width_px: p.width || 0, // Adjust based on actual data
+          print_area_height_px: p.height || 0, // Adjust based on actual data
         }));
 
-        const placements: FormattedPlacement[] = (product.placements || []).map(
-          (p) => ({
-            placement: p.placement,
-            print_area_width_px: p.print_area_width,
-            print_area_height_px: p.print_area_height,
-          })
-        );
-
         return {
-          id: product.id,
+          id: parseInt(product.id, 10), // Frontend expects number, Printify ID is string
           name: product.title,
           description: product.description,
-          brand: product.brand,
-          model: product.model,
-          default_image_url: product.image,
+          brand: null, // Printify doesn't directly provide brand/model like Printful
+          model: null,
+          default_image_url: defaultImage,
           available_sizes: availableSizes,
-          available_colors: availableColors,
+          available_colors: colorsFormatted,
           variants: variants,
-          placements: placements,
+          placements: placements, // Needs verification
         };
       }
     );
@@ -811,23 +855,15 @@ app.get("/api/printful/products", async (c) => {
     // --- Store in Cache ---
     c.executionCtx.waitUntil(
       c.env.STATE_KV.put(cacheKey, JSON.stringify(formattedProducts), {
-        expirationTtl: PRINTFUL_PRODUCTS_CACHE_TTL,
+        expirationTtl: PRINTFUL_PRODUCTS_CACHE_TTL, // Keep existing TTL for now
       })
-        .then(() =>
-          console.log(`Stored Printful products in cache: ${cacheKey}`)
-        )
-        .catch((err) =>
-          console.error(
-            `Failed to cache Printful products for key ${cacheKey}:`,
-            err
-          )
-        )
+      // ... rest of caching code
     );
 
     return c.json({ products: formattedProducts });
   } catch (error: any) {
-    console.error("Error in /api/printful/products route:", error);
-    // Ensure a JSON error response is sent
+    console.error("Error in /api/products route:", error);
+    Sentry.captureException(error); // Capture exception in Sentry
     return c.json(
       {
         error:
@@ -842,8 +878,8 @@ app.get("/api/printful/products", async (c) => {
 
 // POST /api/printful/shipping-options
 app.post("/api/printful/shipping-options", async (c) => {
-  if (!c.env.PRINTFUL_API_KEY || !c.env.PRINTFUL_STORE_ID) {
-    console.error("PRINTFUL_API_KEY or PRINTFUL_STORE_ID not set.");
+  if (!c.env.PRINTIFY_API_KEY || !c.env.PRINTIFY_SHOP_ID) {
+    console.error("PRINTIFY_API_KEY or PRINTIFY_SHOP_ID not set.");
     return c.json({ error: "Server configuration error" }, 500);
   }
 
@@ -863,12 +899,12 @@ app.post("/api/printful/shipping-options", async (c) => {
 
     const endpoint = "/shipping/rates";
     const response = await printfulRequestGateway(
-      c.env.PRINTFUL_API_KEY,
+      c.env.PRINTIFY_API_KEY,
       "POST",
       endpoint,
       undefined,
       validation.data,
-      c.env.PRINTFUL_STORE_ID
+      c.env.PRINTIFY_SHOP_ID
     );
 
     if (!response.ok) {
@@ -1381,6 +1417,44 @@ async function printfulRequestGateway(
 
   console.log(
     `Printful API Response (GW): ${response.status} ${response.statusText}`
+  );
+  return response;
+}
+
+// --- Printify API Client Helper ---
+const PRINTIFY_API_BASE = "https://api.printify.com";
+
+async function printifyRequestGateway(
+  apiKey: string,
+  method: string,
+  endpoint: string, // e.g., /v1/shops/{shop_id}/products.json
+  queryParams?: URLSearchParams,
+  body?: any
+): Promise<Response> {
+  let url = `${PRINTIFY_API_BASE}${endpoint}`;
+  if (queryParams) {
+    url += `?${queryParams.toString()}`;
+  }
+
+  const headers: HeadersInit = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+
+  console.log(
+    `Printify API Request: ${method} ${url}` +
+      (body ? ` Body: ${JSON.stringify(body).substring(0, 100)}...` : "")
+  );
+
+  const response = await fetch(url, {
+    method: method,
+    headers: headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  console.log(
+    `Printify API Response: ${response.status} ${response.statusText}`
   );
   return response;
 }

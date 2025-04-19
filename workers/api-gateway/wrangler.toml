@@ -86,8 +86,18 @@ ALLOWED_ORIGINS = "https://druckshirt-frontend.pages.dev,*.druckshirt-frontend.p
 ALLOWED_ORIGINS = "https://druckshirt-frontend.pages.dev,*.druckshirt-frontend.pages.dev,http://localhost:5173"
 R2_PUBLIC_URL_PREFIX = "https://pub-ce3cfb8f641747a4b56c9c9f3bbd7096.r2.dev" # Replace this if default differs
 
-# Secrets are set via GitHub Actions during deploy or manually via wrangler secret put
 # DO NOT add secrets directly to this file.
+
+# Example Secret Placeholders (Set via wrangler secret put or GitHub Actions)
+# [vars] # Uncomment if setting defaults here, usually secrets are env-specific
+# STRIPE_SECRET_KEY = "placeholder"
+# STRIPE_WEBHOOK_SECRET = "placeholder"
+# PRINTFUL_API_KEY = "placeholder"
+# PRINTFUL_STORE_ID = "placeholder"
+# RESEND_API_KEY = "placeholder"
+# XAI_API_KEY = "placeholder"
+# PRINTIFY_API_KEY = "placeholder"
+# PRINTIFY_SHOP_ID = "placeholder"
 
 # Variables
 # [vars]
