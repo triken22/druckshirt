@@ -361,6 +361,14 @@ app.use(
 // Health check
 app.get("/", (c) => c.text("DruckMeinShirt API is running!"));
 
+// Redirect old Printful product path to new generic product path
+app.get("/api/printful/products", (c) => {
+  const queryString = c.req.url.split("?")[1];
+  const redirectUrl = "/api/products" + (queryString ? `?${queryString}` : "");
+  console.log(`Redirecting /api/printful/products to ${redirectUrl}`);
+  return c.redirect(redirectUrl, 302); // Use 302 for temporary redirect
+});
+
 // POST /api/upload-image
 app.post("/api/upload-image", async (c) => {
   if (!c.env.IMAGE_BUCKET || !c.env.R2_PUBLIC_URL_PREFIX) {
