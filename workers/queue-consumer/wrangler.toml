@@ -32,12 +32,12 @@ binding = "STATE_KV"
 id = "0cc66f93317c4798af20561bb8c4aa23" # Updated: Staging ID (should match api-gateway's staging)
 
 [[env.staging.queues.consumers]]
-queue = "druckshirt-token-fulfillment-staging" # Updated: Staging queue name
+queue = "token-fulfillment-queue-staging" # Corrected: Staging queue name to match SETUP_INSTRUCTIONS
 # max_retries = 3
 # dead_letter_queue = "druckshirt-staging-dlq"
 
 [[env.staging.queues.consumers]]
-queue = "druckshirt-order-fulfillment-staging" # Updated: Staging queue name
+queue = "order-fulfillment-queue-staging" # Corrected: Staging queue name to match SETUP_INSTRUCTIONS
 # max_retries = 5
 # dead_letter_queue = "druckshirt-staging-dlq"
 
@@ -62,5 +62,3 @@ queue = "order-fulfillment-queue-production" # Verified Production Queue
 
 # Secrets are set via GitHub Actions during deploy or manually via wrangler secret put
 # DO NOT add secrets directly to this file.
-# [vars]
-# Secrets like STRIPE_SECRET_KEY, PRINTFUL_API_KEY, RESEND_API_KEY are set via `wrangler secret put` 
