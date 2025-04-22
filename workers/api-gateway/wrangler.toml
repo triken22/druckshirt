@@ -43,11 +43,11 @@ binding = "IMAGE_BUCKET"
 bucket_name = "druckmeinshirt-images-staging" # Updated: Staging Name
 
 [[env.staging.queues.producers]]
-queue = "druckshirt-token-fulfillment-staging" # Staging queue name
+queue = "token-fulfillment-queue-staging" # Corrected: Staging queue name to match SETUP_INSTRUCTIONS
 binding = "TOKEN_QUEUE"
 
 [[env.staging.queues.producers]]
-queue = "druckshirt-order-fulfillment-staging" # Staging queue name
+queue = "order-fulfillment-queue-staging" # Corrected: Staging queue name to match SETUP_INSTRUCTIONS
 binding = "ORDER_QUEUE"
 
 # Secrets for staging would be set via:
@@ -81,16 +81,3 @@ R2_PUBLIC_URL_PREFIX = "https://pub-ce3cfb8f641747a4b56c9c9f3bbd7096.r2.dev" # R
 
 # Secrets are set via GitHub Actions during deploy or manually via wrangler secret put
 # DO NOT add secrets directly to this file.
-
-# Variables
-# [vars]
-# ALLOWED_ORIGINS = "http://localhost:3000,<YOUR_PRODUCTION_FRONTEND_URL_HERE>"
-# R2_PUBLIC_URL_PREFIX = "https://pub-ce3cfb8f641747a4b56c9c9f3bbd7096.r2.dev"
-
-# Secrets are set via GitHub Actions during deploy
-# [vars]
-# STRIPE_SECRET_KEY = "placeholder"
-# STRIPE_WEBHOOK_SECRET = "placeholder"
-# PRINTFUL_API_KEY = "placeholder"
-# RESEND_API_KEY = "placeholder"
-# XAI_API_KEY = "placeholder" 
